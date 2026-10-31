@@ -82,3 +82,11 @@ Windows build artifacts include CC0 photographic wall, floor and metal textures 
 - Fullscreen uses borderless native desktop resolution; F11 toggles between borderless and windowed modes.
 
 **Graphics note:** These are engine and scene repairs, not a finished AAA environment. The live rendered scene needs testing on a Windows gaming PC.
+
+## Window mode and prison corner repair
+
+- The game starts as a decorated, resizable, maximized Windows application with minimize/maximize/close controls.
+- F11 (or Alt+Enter) toggles genuine borderless fullscreen and restores the prior maximized window state on exit.
+- Esc pauses and frees the mouse so the native maximize button can be clicked.
+- Both main partition walls now connect to the outer perimeter at the last interior row. Locked doors cannot be bypassed around the end corners.
+- Regression tests cover map reachability, corner collision and door isolation.

@@ -476,9 +476,11 @@ static void overlay(const World& w,const AIService& ai,const AgentExecutor& exec
     }
 }
 int main(){
-    // Borderless fullscreen uses the desktop native resolution and refresh rate.
-    SetConfigFlags(FLAG_MSAA_4X_HINT|FLAG_VSYNC_HINT|FLAG_BORDERLESS_WINDOWED_MODE);
-    InitWindow(1600,900,"AI PRISON BREAK  |  BLACKWATER");
+    // Native Windows maximize controls are available in this resizable window.
+    SetConfigFlags(FLAG_MSAA_4X_HINT|FLAG_VSYNC_HINT|FLAG_WINDOW_RESIZABLE);
+    InitWindow(1280,720,"AI PRISON BREAK  |  BLACKWATER");
+    SetWindowMinSize(900,540);
+    MaximizeWindow();
     SetExitKey(KEY_NULL);
     SetTargetFPS(std::clamp(GetMonitorRefreshRate(GetCurrentMonitor()),60,240));
     DisableCursor();
@@ -493,13 +495,30 @@ int main(){
     AgentExecutor executor;
     float yaw=1.77f,pitch=0.f,worldTick=0.f,brainTick=0.f;
     bool paused=false,chat=false,flashlight=true,controls=false,debug=false,quit=false;
+    bool borderlessFullscreen=false;
+    bool restoreMaximized=true;
     std::string input;
     const bool previewCapture=std::getenv("AI_PRISON_PREVIEW")!=nullptr;
     int captureFrames=0;
     while(!WindowShouldClose()&&!quit){
         float dt=std::min(.05f,GetFrameTime());
         int sw=GetScreenWidth(),sh=GetScreenHeight();
-        if(IsKeyPressed(KEY_F11))ToggleBorderlessWindowed();
+        // F11 and Alt+Enter: preserve the decorated window's maximize state.
+        const bool toggleDisplay=IsKeyPressed(KEY_F11) ||
+            ((IsKeyDown(KEY_LEFT_ALT)||IsKeyDown(KEY_RIGHT_ALT))&&IsKeyPressed(KEY_ENTER));
+        if(toggleDisplay) {
+            if(!borderlessFullscreen) {
+                restoreMaximized=IsWindowMaximized();
+                if(restoreMaximized)RestoreWindow();
+                ToggleBorderlessWindowed();
+                borderlessFullscreen=IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE);
+            } else {
+                ToggleBorderlessWindowed();
+                borderlessFullscreen=IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE);
+                if(!borderlessFullscreen && restoreMaximized)MaximizeWindow();
+            }
+            if(!paused&&!chat&&!controls)DisableCursor();
+        }
         if(IsKeyPressed(KEY_F1))controls=!controls;
         if(IsKeyPressed(KEY_F3))debug=!debug;
         if(paused&&IsKeyPressed(KEY_Q))quit=true;

@@ -36,10 +36,11 @@ const Door* World::doorAt(int x,int z) const {
 }
 bool World::solid(int x,int z) const {
     if(x<1||z<1||x>=width-1||z>=height-1) return true;
-    if(x==10 && z>=1 && z<=17) {
+    // Walls join the perimeter; no gap at the last interior row.
+    if(x==10 && z>=1 && z<height-1) {
         auto* d=doorAt(x,z); return !d || !d->open;
     }
-    if(x==18 && z>=1 && z<=17) {
+    if(x==18 && z>=1 && z<height-1) {
         auto* d=doorAt(x,z); return !d || !d->open;
     }
     if(z==10 && x>=19 && x<=26) return true;
