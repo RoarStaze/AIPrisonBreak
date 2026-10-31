@@ -1,0 +1,25 @@
+name: Windows game build
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -A x64 -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+      - name: Run simulation tests
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Upload native fullscreen Windows game
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIPrisonBreak-Windows-x64
+          path: build/Release/AIPrisonBreak.exe
+          if-no-files-found: error
