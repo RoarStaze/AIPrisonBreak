@@ -2,6 +2,7 @@
 #include "raymath.h"
 #include "world.hpp"
 #include "ai.hpp"
+#include "agent.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -199,15 +200,16 @@ static void minimap(const World& w,int screenW,int screenH){
     DrawCircle((int)(x+w.player.pos.x*scale),(int)(y+w.player.pos.z*scale),3.7f,rgba(141,231,201));
     DrawCircle((int)(x+w.guard.pos.x*scale),(int)(y+w.guard.pos.z*scale),3.5f,rgba(238,91,83));
 }
-static void overlay(const World& w,const AIService& ai,Font font,bool chat,const std::string& input,bool pause){
+static void overlay(const World& w,const AIService& ai,const AgentExecutor& executor,Font font,bool chat,const std::string& input,bool pause){
     int sw=GetScreenWidth(),sh=GetScreenHeight();
     DrawRectangleGradientV(0,0,sw,142,rgba(4,11,17,205),rgba(4,11,17,0));
     text(font,"BLACKWATER  /  C-BLOCK",32,20,16,rgba(149,203,208));
     text(font,w.lockdown?"LOCKDOWN   ACTIVE":"SECURITY  SYSTEM  NORMAL",31,51,29,w.lockdown?rgba(236,104,89):rgba(126,220,183));
     text(font,"YOU ARE IN RESTRICTED CUSTODY",32,88,14,rgba(185,196,189));
-    panel({(float)sw-335,22,302,61},rgba(5,17,24,205));
+    panel({(float)sw-335,22,302,83},rgba(5,17,24,205));
     text(font,"OFFICER VOSS / AUTONOMOUS AGENT",sw-321.f,33,13,rgba(145,184,190));
     text(font,ai.status.substr(0,37),sw-321.f,54,13,rgba(231,169,95));
+    text(font,executor.description().substr(0,39),sw-321.f,74,12,rgba(166,204,189));
     DrawRectangleGradientV(0,sh-165,sw,165,rgba(4,11,18,0),rgba(3,8,13,225));
     text(font,w.status,30,(float)sh-123,19,rgba(231,224,205));
     text(font,"WASD MOVE    SHIFT SPRINT    C CROUCH    E INTERACT    T TALK    F FLASHLIGHT    ESC PAUSE",30,(float)sh-69,13,rgba(172,193,193));
@@ -255,6 +257,7 @@ int main(){
     Texture2D steel=makeTexture(23,true);
     World w;
     AIService ai;
+    AgentExecutor executor;
     float yaw=1.45f,pitch=0.f,worldTick=0.f,brainTick=0.f;
     bool paused=false,chat=false,flashlight=true;
     std::string input;
@@ -267,7 +270,7 @@ int main(){
             else {paused=!paused;if(paused)EnableCursor();else DisableCursor();}
         }
         if(IsKeyPressed(KEY_R)&&(paused||w.caught||w.escaped)){
-            w=World{};yaw=1.45f;pitch=0;worldTick=0;brainTick=0;
+            w=World{};executor.clear();yaw=1.45f;pitch=0;worldTick=0;brainTick=0;
             paused=false;chat=false;input.clear();DisableCursor();
         }
         if(!paused&&!w.caught&&!w.escaped){
@@ -296,16 +299,13 @@ int main(){
                 w.player.angle=yaw;
             }
             w.update(dt);
+            executor.tick(w,dt);
             brainTick+=dt;
-            if(brainTick>5.4f&&!ai.busy()&&!chat){ai.request(w);brainTick=0;}
+            if(brainTick>5.4f&&!ai.busy()&&!chat&&!executor.active()){ai.request(w);brainTick=0;}
         }
         if(auto reply=ai.poll()){
             if(!reply->speech.empty())w.command("speak",reply->speech);
-            for(const auto& d:reply->actions) {
-                if(d.action=="speak")continue;
-                ActionResult res=w.command(d.action,d.target,d.at);
-                if(!res.ok)w.log("AI action rejected: "+d.action+" / "+res.text,w.guard.pos);
-            }
+            executor.setPlan(reply->actions);
         }
         Camera3D camera{};
         float eyeHeight=w.player.crouching?1.17f:1.77f;
@@ -325,7 +325,7 @@ int main(){
             DrawSphere(impact,.075f,rgba(205,219,178,30));
         }
         EndMode3D();
-        overlay(w,ai,font,chat,input,paused);
+        overlay(w,ai,executor,font,chat,input,paused);
         EndDrawing();
     }
     UnloadTexture(concrete);UnloadTexture(steel);
