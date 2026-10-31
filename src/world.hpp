@@ -48,7 +48,8 @@ public:
     void log(std::string message,Point source={},float loudness=0);
     const Door* doorAt(int x,int z) const;
 private:
-    Point lastKnown{5.5f,5.5f};
+    Point lastKnown{};
+    bool hasLastKnown=false;
     void followGuard(float dt);
     bool tryMove(Actor& actor, Point destination, float step);
     std::optional<Point> nextPathPoint(Point from,Point to) const;

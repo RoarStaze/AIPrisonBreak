@@ -430,14 +430,22 @@ static void overlay(const World& w,const AIService& ai,const AgentExecutor& exec
         Rectangle dialog={px,sh-335*scale,pw,164*scale};
         panel(dialog,rgba(4,15,20,245));
         DrawRectangle(px,dialog.y,3*scale,dialog.height,teal);
-        text(font,"OFFICER VOSS  /  LIVE AI CONVERSATION",px+24*scale,dialog.y+20*scale,16*scale,teal);
+        text(font,"OFFICER VOSS  /  TWO-WAY PRISON INTERCOM",px+24*scale,dialog.y+20*scale,16*scale,teal);
+        // Show the last real exchange above the input, not a simulated canned line.
+        const auto& turns=ai.history();
+        if(!turns.empty()) {
+            const auto& prior=turns.back();
+            text(font,"YOU: "+prior.player.substr(0,78),px+24*scale,dialog.y-58*scale,15*scale,dim);
+            text(font,"VOSS: "+prior.officer.substr(0,78),px+24*scale,dialog.y-29*scale,15*scale,bone);
+        }
         text(font,"> "+input+"_",px+24*scale,dialog.y+62*scale,21*scale,bone);
         text(font,"ENTER  SEND     ESC  CANCEL",px+24*scale,dialog.y+126*scale,13*scale,dim);
-    } else if(!w.guardSpeech.empty()&&!pause) {
+    } else if((ai.hasPendingConversation() || !w.guardSpeech.empty())&&!pause) {
         float wmsg=std::min(sw*.64f,860.f*scale);
         Rectangle r={(sw-wmsg)*.5f,sh-217*scale,wmsg,51*scale};
         panel(r,rgba(5,16,21,216));
-        centeredText(font,"VOSS   "+w.guardSpeech.substr(0,100),sw*.5f,r.y+13*scale,16*scale,bone);
+        const std::string line=ai.hasPendingConversation()?"INTERCOM   Waiting for Officer Voss (local AI)...":"VOSS   "+w.guardSpeech.substr(0,110);
+        centeredText(font,line,sw*.5f,r.y+13*scale,16*scale,bone);
     }
 
     if(showMap&&!pause&&!chat)minimap(w,sw,sh);
@@ -453,7 +461,7 @@ static void overlay(const World& w,const AIService& ai,const AgentExecutor& exec
         const char* lines[]={
             "WASD  /  MOVE             MOUSE  /  LOOK",
             "LEFT SHIFT  /  SPRINT     C  /  CROUCH",
-            "E  /  INTERACT           T  /  TALK TO VOSS",
+            "E  /  INTERACT           T  /  VOSS INTERCOM",
             "F  /  FLASHLIGHT         TAB  /  MAP",
             "ESC  /  PAUSE             F11  /  FULLSCREEN",
             "F1  /  CLOSE HELP         F12  /  SCREENSHOT"
@@ -536,8 +544,8 @@ int main(){
                 for(int c=GetCharPressed();c!=0;c=GetCharPressed())if(c>=32&&c<=126&&input.size()<180)input.push_back((char)c);
                 if(IsKeyPressed(KEY_BACKSPACE)&&!input.empty())input.pop_back();
                 if(IsKeyPressed(KEY_ENTER)){
-                    if(!input.empty()&&ai.request(w,input)){w.log("Prisoner: "+input,w.player.pos,1);w.status="WAITING FOR OFFICER VOSS";input.clear();chat=false;DisableCursor();}
-                    else w.status="AI BUSY OR NO MESSAGE";
+                    if(!input.empty()&&ai.submitMessage(w,input)){w.log("Prisoner: "+input,w.player.pos,1);w.status="MESSAGE SENT VIA INTERCOM - WAITING FOR VOSS";input.clear();chat=false;DisableCursor();}
+                    else w.status="MESSAGE EMPTY OR QUEUE FULL";
                 }
             }else{
                 Vector2 mouse=GetMouseDelta();yaw=applyMouseYaw(yaw,mouse.x);pitch=std::clamp(pitch-mouse.y*.00225f,-1.34f,1.34f);
@@ -558,11 +566,21 @@ int main(){
             w.update(dt);
             executor.tick(w,dt);
             brainTick+=dt;
-            if(brainTick>5.4f&&!ai.busy()&&!chat&&!executor.active()){ai.request(w);brainTick=0;}
+            if(brainTick>8.0f&&!ai.busy()&&!ai.hasPendingConversation()&&!chat&&!executor.active()){ai.requestPatrol(w);brainTick=0;}
         }
         if(auto reply=ai.poll()){
-            if(!reply->speech.empty())w.command("speak",reply->speech);
-            executor.setPlan(reply->actions);
+            if(reply->kind==ReplyKind::Conversation) {
+                if(!reply->error.empty()) {
+                    w.status="VOSS RADIO ERROR: "+reply->error.substr(0,135);
+                } else {
+                    if(!reply->speech.empty())w.command("speak",reply->speech);
+                    w.status="VOSS REPLIED ON INTERCOM";
+                    executor.setPlan(reply->actions);
+                }
+            } else if(reply->error.empty()) {
+                // Patrol planning is SILENT. No unsolicited, hallucinated dialogue.
+                executor.setPlan(reply->actions);
+            }
         }
         Camera3D camera{};
         float eyeHeight=w.player.crouching?1.17f:1.77f;

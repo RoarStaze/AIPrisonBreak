@@ -107,9 +107,9 @@ void World::followGuard(float dt) {
     if(caught||escaped)return;
     Observation obs=perceive();
     if(obs.playerVisible) {
-        guard.destination=player.pos;lastKnown=player.pos;lastSeen=elapsed;
+        guard.destination=player.pos;lastKnown=player.pos;hasLastKnown=true;lastSeen=elapsed;
         if(distance(guard.pos,player.pos)<.85f){caught=true;status="OFFICER VOSS DETAINED YOU";log("Player detained.",guard.pos);return;}
-    } else if(obs.playerAudible){guard.destination=player.pos;lastKnown=player.pos;alert=std::max(alert,1);}
+    } else if(obs.playerAudible){guard.destination=player.pos;lastKnown=player.pos;hasLastKnown=true;alert=std::max(alert,1);}
     Point target=guard.destination;
     if(auto next=nextPathPoint(guard.pos,target))tryMove(guard,*next,dt*(obs.playerVisible?3.25f:1.65f));
     if(distance(guard.pos,target)<.7f && !obs.playerVisible){
@@ -125,7 +125,7 @@ void World::update(float dt) {
         // Cameras report movement in common areas, not through walls.
         for(Point c: {Point{13.5f,3.5f},Point{22.5f,15.5f}}){
             if(distance(c,player.pos)<5 && lineOfSight(c,player.pos) && player.moving && !player.crouching){
-                lastKnown=player.pos;alert=std::max(alert,2);
+                lastKnown=player.pos;hasLastKnown=true;alert=std::max(alert,2);
                 if((int)elapsed%10==0)status="CCTV MOTION DETECTED";
             }
         }
@@ -259,7 +259,8 @@ std::string World::observationJson() const {
     Observation o=perceive();
     std::ostringstream s;s<<"{\"time\":"<<(int)elapsed<<",\"guard\":{\"x\":"<<guard.pos.x<<",\"z\":"<<guard.pos.z<<",\"facing\":"<<guard.angle
       <<"},\"prisonerVisible\":"<<(o.playerVisible?"true":"false")<<",\"prisonerAudible\":"<<(o.playerAudible?"true":"false")
-      <<",\"lastKnown\":{\"x\":"<<o.playerLastKnown.x<<",\"z\":"<<o.playerLastKnown.z<<"},\"alarm\":"<<alert
+      <<",\"lastKnown\":"<<(hasLastKnown?(std::string("{\"x\":")+std::to_string(lastKnown.x)+",\"z\":"+std::to_string(lastKnown.z)+"}"):std::string("null"))
+      <<",\"prisonerPosition\":"<<(o.playerVisible?(std::string("{\"x\":")+std::to_string(player.pos.x)+",\"z\":"+std::to_string(player.pos.z)+"}"):std::string("null"))<<",\"alarm\":"<<alert
       <<",\"lockdown\":"<<(lockdown?"true":"false")<<",\"cameras\":"<<(cameras?"true":"false")<<",\"lights\":"<<(lights?"true":"false")<<",\"doors\":[";
     for(size_t i=0;i<doors.size();i++){const auto& d=doors[i];if(i)s<<",";s<<"{\"id\":"<<quoted(d.id)<<",\"x\":"<<(d.x+.5f)<<",\"z\":"<<(d.z+.5f)<<",\"locked\":"<<(d.locked?"true":"false")<<",\"open\":"<<(d.open?"true":"false")<<"}";}
     // Facility blueprints disclose fixed equipment; portable items require observation.

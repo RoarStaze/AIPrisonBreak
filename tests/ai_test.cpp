@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <future>
+#include <mutex>
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <thread>
