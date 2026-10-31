@@ -1,0 +1,9 @@
+# Compiled binaries and downloaded GitHub Actions artifact contents
+/build/
+
+# IDE and OS generated files
+/.vs/
+*.user
+*.suo
+Thumbs.db
+.DS_Store

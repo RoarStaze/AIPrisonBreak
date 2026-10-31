@@ -103,7 +103,7 @@ jobs:
       - name: Upload native fullscreen Windows game
         uses: actions/upload-artifact@v4
         with:
-          name: AIPrisonBreak-Windows-x64
+          name: AIPrisonBreak
           path: |
             build/Release/AIPrisonBreak.exe
             build/Release/SETUP-AI.ps1
