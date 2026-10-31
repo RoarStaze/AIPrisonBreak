@@ -107,7 +107,7 @@ void World::followGuard(float dt) {
     if(obs.playerVisible) {
         guard.destination=player.pos;lastKnown=player.pos;lastSeen=elapsed;
         if(distance(guard.pos,player.pos)<.85f){caught=true;status="OFFICER VOSS DETAINED YOU";log("Player detained.",guard.pos);return;}
-    } else if(obs.playerAudible && !guard.moving){guard.destination=player.pos;}
+    } else if(obs.playerAudible){guard.destination=player.pos;lastKnown=player.pos;alert=std::max(alert,1);}
     Point target=guard.destination;
     if(auto next=nextPathPoint(guard.pos,target))tryMove(guard,*next,dt*(obs.playerVisible?3.25f:1.65f));
     if(distance(guard.pos,target)<.7f && !obs.playerVisible){
@@ -210,7 +210,20 @@ std::string World::observationJson() const {
       <<"},\"prisonerVisible\":"<<(o.playerVisible?"true":"false")<<",\"prisonerAudible\":"<<(o.playerAudible?"true":"false")
       <<",\"lastKnown\":{\"x\":"<<o.playerLastKnown.x<<",\"z\":"<<o.playerLastKnown.z<<"},\"alarm\":"<<alert
       <<",\"lockdown\":"<<(lockdown?"true":"false")<<",\"cameras\":"<<(cameras?"true":"false")<<",\"lights\":"<<(lights?"true":"false")<<",\"doors\":[";
-    for(size_t i=0;i<doors.size();i++){const auto& d=doors[i];if(i)s<<",";s<<"{\"id\":"<<quoted(d.id)<<",\"locked\":"<<(d.locked?"true":"false")<<",\"open\":"<<(d.open?"true":"false")<<"}";}
+    for(size_t i=0;i<doors.size();i++){const auto& d=doors[i];if(i)s<<",";s<<"{\"id\":"<<quoted(d.id)<<",\"x\":"<<(d.x+.5f)<<",\"z\":"<<(d.z+.5f)<<",\"locked\":"<<(d.locked?"true":"false")<<",\"open\":"<<(d.open?"true":"false")<<"}";}
+    // Facility blueprints disclose fixed equipment; portable items require observation.
+    // This distinction prevents the language model from learning hidden loot coordinates.
+    s<<"],\"facilityObjects\":[";
+    bool firstObject=true;
+    for(const auto& obj:objects){
+        bool visible=distance(guard.pos,obj.pos)<8.f&&lineOfSight(guard.pos,obj.pos);
+        if(obj.kind=="item"&&!visible)continue;
+        if(!firstObject)s<<",";
+        firstObject=false;
+        s<<"{\"id\":"<<quoted(obj.id)<<",\"kind\":"<<quoted(obj.kind)
+         <<",\"x\":"<<obj.pos.x<<",\"z\":"<<obj.pos.z
+         <<",\"taken\":"<<(obj.taken?"true":"false")<<"}";
+    }
     s<<"],\"visibleObjects\":[";for(size_t i=0;i<o.visibleObjects.size();i++){if(i)s<<",";s<<quoted(o.visibleObjects[i]);}
     s<<"],\"reports\":[";for(size_t i=0;i<o.reports.size();i++){if(i)s<<",";s<<quoted(o.reports[i]);}
     s<<"],\"sounds\":[";for(size_t i=0;i<o.sounds.size();i++){if(i)s<<",";s<<quoted(o.sounds[i]);}
