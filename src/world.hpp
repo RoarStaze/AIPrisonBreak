@@ -37,6 +37,8 @@ public:
     bool solid(int x,int z) const;
     bool canStand(Point pos, float radius=.22f) const;
     bool lineOfSight(Point a, Point b) const;
+    bool visualLineOfSight(Point a, Point b) const;
+    void engagePlayer();
     void movePlayer(Point delta, bool crouch, bool run);
     void update(float dt);
     Observation perceive() const;
@@ -44,6 +46,7 @@ public:
     std::string interactionHint() const;
     ActionResult playerInteract();
     std::string observationJson() const;
+    std::string conversationObservationJson() const;
     std::string stateJson() const;
     void log(std::string message,Point source={},float loudness=0);
     const Door* doorAt(int x,int z) const;
