@@ -20,9 +20,12 @@ int main(){
     for(int i=0;i<180 && e.active();++i){w.update(1.f/60.f);e.tick(w,1.f/60.f);}
     assert(!e.active());
     assert(!w.cameras); // Device interaction occurs only after movement.
+    assert(e.lastEvent.find("Completed interact")!=std::string::npos);
+    assert(w.observationJson().find("Officer action result")!=std::string::npos);
     e.setPlan({{"dance","",{}},{"alarm","3",{}}});
     e.tick(w,1.f/60.f);
     assert(!e.active()&&w.alert==3); // Invalid action cannot block valid follow-up.
+    assert(w.observationJson().find("Rejected dance")!=std::string::npos);
     e.setPlan({{"move","",{0,0}},{"alarm","1",{}}});
     e.tick(w,1.f/60.f);
     assert(!e.active()&&w.alert==1); // Blocked destinations are skipped.
