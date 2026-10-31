@@ -81,5 +81,53 @@ int main(){
     assert(observation["prisonerVisible"]==false);
     assert(observation["lastKnown"].is_null());
     assert(observation["prisonerPosition"].is_null());
-    std::cout<<"AI conversation priority, context, error and perception tests passed\n";
+    // Stronger agent: report action outcome to the model for course correction.
+    AIService reflective([&](const std::string& request){
+        const auto j=json::parse(request);
+        const auto text=j["messages"].back()["content"].get<std::string>();
+        assert(text.find("door was blocked by the lockdown")!=std::string::npos);
+        assert(j["options"]["num_ctx"].get<int>()>=8192);
+        assert(j["options"]["repeat_penalty"].get<double>()>1.0);
+        assert(j["model"]=="qwen3:8b");
+        return json({{"message",{{"content",json({{"speech",""},{"actions",json::array()}}).dump()}}}}).dump();
+    });
+    reflective.model="qwen3:8b";
+    reflective.noteOutcome("Officer tried opening the security door; door was blocked by the lockdown");
+    assert(reflective.requestPatrol(w));
+    assert(pump(reflective,response));
+    assert(response.kind==ReplyKind::Patrol);
+
+    // Detect virtually identical boilerplate after different prisoner questions.
+    int responseCalls=0;
+    AIService varied([&](const std::string& request){
+        ++responseCalls;
+        const auto j=json::parse(request);
+        const auto message=j["messages"].back()["content"].get<std::string>();
+        std::string spoken;
+        if(responseCalls==1)spoken="Stay in your cell. This is an active lockdown.";
+        else if(responseCalls==2)spoken="Stay in your cell; this is an active lockdown!";
+        else {
+            assert(message.find("avoid repeating")!=std::string::npos);
+            spoken="There is a medical officer on shift. I can request a wellness check.";
+        }
+        return json({{"message",{{"content",json({{"speech",spoken},{"actions",json::array()}}).dump()}}}}).dump();
+    });
+    assert(varied.submitMessage(w,"What is happening?"));
+    assert(pump(varied,response));
+    assert(varied.submitMessage(w,"I feel sick, can I see someone?"));
+    assert(pump(varied,response));
+    assert(responseCalls==3);
+    assert(response.speech.find("medical officer")!=std::string::npos);
+    assert(varied.history().size()==2);
+
+    // Conversation memory keeps more than eight turns; no hard cutoff at 8.
+    AIService memory([](const std::string&)->std::string{
+        return json({{"message",{{"content",json({{"speech","Acknowledged."},{"actions",json::array()}}).dump()}}}}).dump();
+    });
+    for(int i=0;i<12;i++){
+        assert(memory.submitMessage(w,"Question "+std::to_string(i)));
+        assert(pump(memory,response));
+    }
+    assert(memory.history().size()>=12);
+    std::cout<<"AI conversation priority, context, anti-repetition, action feedback and perception tests passed\n";
 }
