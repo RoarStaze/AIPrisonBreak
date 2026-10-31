@@ -164,6 +164,10 @@ static Model loadProp(const char* filename) {
     if(!FileExists(filename))return {};
     Model model=LoadModel(filename);
     if(!model.meshCount)return {};
+    // raylib replaces failed imports with a generic cube: reject it explicitly.
+    int vertices=0;
+    for(int i=0;i<model.meshCount;i++)vertices+=model.meshes[i].vertexCount;
+    if(vertices<100){UnloadModel(model);return {};}
     return model;
 }
 static void initProps(){
