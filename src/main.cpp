@@ -440,11 +440,13 @@ static void overlay(const World& w,const AIService& ai,const AgentExecutor& exec
         }
         text(font,"> "+input+"_",px+24*scale,dialog.y+62*scale,21*scale,bone);
         text(font,"ENTER  SEND     ESC  CANCEL",px+24*scale,dialog.y+126*scale,13*scale,dim);
-    } else if((ai.hasPendingConversation() || !w.guardSpeech.empty())&&!pause) {
+    } else if((ai.hasPendingConversation() || !w.guardSpeech.empty() || w.status.rfind("VOSS RADIO ERROR:",0)==0)&&!pause) {
         float wmsg=std::min(sw*.64f,860.f*scale);
         Rectangle r={(sw-wmsg)*.5f,sh-217*scale,wmsg,51*scale};
         panel(r,rgba(5,16,21,216));
-        const std::string line=ai.hasPendingConversation()?"INTERCOM   Waiting for Officer Voss (local AI)...":"VOSS   "+w.guardSpeech.substr(0,110);
+        const bool hasError=w.status.rfind("VOSS RADIO ERROR:",0)==0;
+        const std::string line=ai.hasPendingConversation()?"INTERCOM   Officer Voss is processing your message...":
+            hasError ? w.status.substr(0,110) : "VOSS   "+w.guardSpeech.substr(0,110);
         centeredText(font,line,sw*.5f,r.y+13*scale,16*scale,bone);
     }
 

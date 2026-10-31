@@ -32,7 +32,7 @@ public:
     bool hasHairpin=false, hasCard=false;
     int alert=1;
     float elapsed=0, noise=0, lastSeen=-100;
-    std::string guardSpeech="Keep moving. Nothing to see here.", status="Find a way out.";
+    std::string guardSpeech="", status="Find a way out.";
     std::deque<Event> events;
     bool solid(int x,int z) const;
     bool canStand(Point pos, float radius=.22f) const;
