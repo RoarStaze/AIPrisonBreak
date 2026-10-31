@@ -66,7 +66,7 @@ static void drawGuard(Point p,float angle,float time,bool alert){
     // Articulated rounded anthropomorphic placeholder; character can later be replaced by a rigged asset.
     Vector3 base=v3(p.x,0,p.z);
     float sway=std::sin(time*6.f)*.085f;
-    DrawEllipse3D(v3(p.x,.012f,p.z),.5f,.3f,rgba(0,0,0,92));
+    DrawCylinder(v3(p.x,.009f,p.z),.42f,.42f,.012f,20,rgba(0,0,0,92));
     Color pants=rgba(24,31,40),shirt=rgba(34,46,54),skin=rgba(183,143,118);
     beam(v3(p.x-.16f,.77f,p.z),v3(p.x-.17f+sway*.5f,.12f,p.z+.08f),.115f,pants);
     beam(v3(p.x+.16f,.77f,p.z),v3(p.x+.17f-sway*.5f,.12f,p.z-.08f),.115f,pants);
