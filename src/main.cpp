@@ -636,7 +636,8 @@ int main(){
                 if(IsKeyPressed(KEY_PAGE_DOWN))chatScroll=std::max(0,chatScroll-6);
                 if(IsKeyPressed(KEY_BACKSPACE)&&!input.empty())input.pop_back();
                 if(IsKeyPressed(KEY_ENTER)){
-                    if(!input.empty()&&ai.submitMessage(w,input)){w.log("Prisoner: "+input,w.player.pos,1);w.status="MESSAGE SENT VIA INTERCOM - WAITING FOR VOSS";input.clear();chat=false;DisableCursor();}
+                    if(!input.empty())w.engagePlayer();
+                    if(!input.empty()&&ai.submitMessage(w,input)){w.log("Prisoner: "+input,w.player.pos,1);w.status="WAITING FOR OFFICER VOSS";input.clear();chat=false;DisableCursor();}
                     else w.status="MESSAGE EMPTY OR QUEUE FULL";
                 }
             }else{
@@ -674,7 +675,7 @@ int main(){
                     w.status="VOSS RADIO ERROR: "+reply->error.substr(0,135);
                 } else {
                     if(!reply->speech.empty())w.command("speak",reply->speech);
-                    w.status="VOSS REPLIED ON INTERCOM";
+                    w.status="VOSS REPLIED";
                     executor.setPlan(reply->actions);
                 }
             } else if(reply->error.empty()) {
