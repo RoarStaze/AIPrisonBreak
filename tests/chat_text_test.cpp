@@ -1,4 +1,5 @@
 #include "chat_text.hpp"
+#include "chat_ui_layout.hpp"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -29,5 +30,18 @@ int main() {
     assert(input=="hi t"); // typing T in an open chat is still allowed
     appendChatInput(input,{'a','b','c'},false,5);
     assert(input=="hi ta"); // never overrun the input capacity
-    std::cout<<"Wrapped dialogue and consumed opening key tests passed.\n";
+    // UX regression: keep the original compact bottom composer, not a fullscreen dialog.
+    const auto small=compactChatLayout(1280,720,0.8f,190.f);
+    assert(small.composerWidth<=920.f*.8f+0.01f);
+    assert(small.composerHeight==164.f*.8f);
+    assert(small.composerY>720.f*.57f);
+    assert(small.historyY+small.historyHeight<small.composerY);
+    assert(small.historyWidth==small.composerWidth);
+    assert(small.historyAlpha>=145 && small.historyAlpha<=215);
+    const auto large=compactChatLayout(2560,1080,1.2f,900.f);
+    assert(large.composerWidth<=920.f*1.2f+0.01f);
+    assert(large.composerY>=1080.f*.50f);
+    assert(large.historyY>=10.f);
+    assert(large.historyY+large.historyHeight<large.composerY);
+    std::cout<<"Wrapped dialogue, input hotkey, and compact HUD layout tests passed.\n";
 }
