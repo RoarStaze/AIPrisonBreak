@@ -4,6 +4,7 @@
 #include "ai.hpp"
 #include "agent.hpp"
 #include "chat_text.hpp"
+#include "chat_ui_layout.hpp"
 #include "presentation_math.hpp"
 #include <algorithm>
 #include <array>
@@ -389,72 +390,72 @@ static std::vector<std::string> wrapForFont(Font font,const std::string& message
 }
 static void drawIntercom(Font font,const AIService& ai,const std::string& input,int scroll){
     int sw=GetScreenWidth(),sh=GetScreenHeight();
-    float scale=std::clamp(std::min(sw/1600.f,sh/900.f),.78f,1.35f);
-    Color bone=rgba(235,240,238),dim=rgba(187,203,210),teal=rgba(132,224,206);
-    // Dim the scene AND give the full transcript its own almost-opaque surface.
-    DrawRectangle(0,0,sw,sh,rgba(2,7,12,160));
-    Rectangle frame={std::max(18.f,sw*.09f),std::max(25.f,sh*.105f),
-                     std::min(sw-36.f,sw*.82f),std::min(sh-48.f,sh*.78f)};
-    panel(frame,rgba(6,16,24,251));
-    DrawRectangle(frame.x+3.f,frame.y+3.f,4.f,frame.height-6.f,teal);
-    float pad=24.f*scale;
-    text(font,"BLACKWATER  /  SECURE INTERCOM",frame.x+pad,frame.y+15.f*scale,18.f*scale,teal);
-    text(font,"OFFICER VOSS   |   LIVE TRANSCRIPT",frame.x+pad,frame.y+44.f*scale,14.f*scale,dim);
-    float logTop=frame.y+78.f*scale,logBottom=frame.y+frame.height-155.f*scale;
-    float logHeight=std::max(90.f,logBottom-logTop);
-    Rectangle inputBox={frame.x+pad,frame.y+frame.height-139.f*scale,frame.width-pad*2,112.f*scale};
+    float scale=std::clamp(std::min(sw/1600.f,sh/900.f),.80f,1.40f);
+    Color bone=rgba(235,240,237),dim=rgba(191,207,210),teal=rgba(142,225,207);
+
+    // The ORIGINAL compact composer stays in its previous on-screen position.
+    // Only history gains a translucent backing; the game remains visible.
+    const float composerWidth=std::min(sw-50.f*scale,920.f*scale);
+    const float pad=18.f*scale,bodySize=16.f*scale,lineHeight=23.f*scale;
     struct Entry {
         const char* role;
         Color color;
         std::vector<std::string> lines;
-        float height;
+        float height=0;
     };
     std::vector<Entry> entries;
-    float bodySize=17.f*scale;
-    float lineHeight=24.f*scale;
-    const float bodyWidth=frame.width-pad*2-123.f*scale;
+    float totalHeight=0.f;
     for(const auto& turn:ai.history()){
         for(int role=0;role<2;role++){
             const std::string& value=role==0?turn.player:turn.officer;
-            Entry item{role==0?"YOU":"VOSS",role==0?teal:bone,
-                       wrapForFont(font,value,bodyWidth,bodySize),0};
-            item.height=std::max(1,(int)item.lines.size())*lineHeight+13.f*scale;
-            entries.push_back(std::move(item));
+            Entry entry{role==0?"YOU":"VOSS",role==0?teal:bone,
+                        wrapForFont(font,value,composerWidth-122.f*scale,bodySize),0.f};
+            entry.height=std::max(1,(int)entry.lines.size())*lineHeight+10.f*scale;
+            totalHeight+=entry.height;
+            entries.push_back(std::move(entry));
         }
     }
-    float contentHeight=0.f;
-    for(const auto& entry:entries)contentHeight+=entry.height;
-    const float maxOffset=std::max(0.f,contentHeight-logHeight+12.f*scale);
-    const float offset=std::clamp((float)scroll*43.f*scale,0.f,maxOffset);
-    float y=contentHeight<=logHeight?logTop+5.f*scale:logBottom-contentHeight+offset-5.f*scale;
-    // Clip the history to its viewport. PageUp/PageDown and wheel scroll older messages.
-    BeginScissorMode((int)(frame.x+pad),(int)logTop,(int)(frame.width-2*pad),(int)logHeight);
-    if(entries.empty())text(font,"NO TRANSMISSIONS YET. ASK VOSS ANYTHING.",frame.x+pad+10.f,logTop+23.f*scale,16.f*scale,dim);
-    for(const auto& entry:entries){
-        if(y+entry.height>=logTop && y<=logBottom){
-            DrawRectangle((int)(frame.x+pad+8.f*scale),(int)y,3,(int)(entry.height-5*scale),
-                          entry.role[0]=='V'?rgba(98,132,149):rgba(55,142,126));
-            text(font,entry.role,frame.x+pad+20.f*scale,y+2.f*scale,14.f*scale,entry.color);
-            float bodyX=frame.x+pad+97.f*scale;
-            for(size_t i=0;i<entry.lines.size();i++)
-                text(font,entry.lines[i],bodyX,y+(float)i*lineHeight,bodySize,bone);
+    auto layout=compactChatLayout(sw,sh,scale,totalHeight+pad*2);
+    if(!entries.empty()&&layout.historyHeight>0.f){
+        // Floating, narrow translucent history panel (no full-screen dark overlay).
+        Rectangle history={layout.historyX,layout.historyY,layout.historyWidth,layout.historyHeight};
+        panel(history,rgba(6,18,25,layout.historyAlpha));
+        float left=history.x+pad;
+        float top=history.y+pad*.55f;
+        float bottom=history.y+history.height-pad*.55f;
+        float viewHeight=bottom-top;
+        float maxScroll=std::max(0.f,totalHeight-viewHeight);
+        float scrollOffset=std::clamp(scroll*37.f*scale,0.f,maxScroll);
+        float y=bottom-totalHeight+scrollOffset;
+        BeginScissorMode((int)(history.x+6*scale),(int)top,(int)(history.width-12*scale),
+                         std::max(1,(int)viewHeight));
+        for(const auto& entry:entries){
+            if(y+entry.height>=top && y<=bottom){
+                text(font,entry.role,left,y+2.f*scale,14.f*scale,entry.color);
+                float bodyX=left+73.f*scale;
+                for(size_t line=0;line<entry.lines.size();line++)
+                    text(font,entry.lines[line],bodyX,y+(float)line*lineHeight,
+                         bodySize,bone);
+            }
+            y+=entry.height;
         }
-        y+=entry.height;
+        EndScissorMode();
     }
-    EndScissorMode();
-    if(contentHeight>logHeight+2.f*scale)
-        text(font,"MOUSE WHEEL / PAGE UP-DOWN TO SCROLL",
-             frame.x+pad+8.f*scale,logBottom+3*scale,12.f*scale,dim);
-    panel(inputBox,rgba(17,35,43,250));
-    text(font,"YOUR TRANSMISSION",inputBox.x+13.f*scale,inputBox.y+10.f*scale,13.f*scale,teal);
-    auto inputLines=wrapForFont(font,"> "+input+"_",inputBox.width-27.f*scale,19.f*scale);
-    const float inHeight=23.f*scale;
-    // Input cap is 180 chars, but handle narrow windows safely by showing newest lines.
+    // Same original bottom-positioned composer, with wrapped input and no
+    // injected T character. Its placement is not tied to history length.
+    Rectangle dialog={layout.composerX,layout.composerY,
+                      layout.composerWidth,layout.composerHeight};
+    panel(dialog,rgba(4,15,20,241));
+    DrawRectangle(dialog.x,dialog.y,3.f*scale,dialog.height,teal);
+    text(font,"OFFICER VOSS  /  TWO-WAY PRISON INTERCOM",
+         dialog.x+24.f*scale,dialog.y+18.f*scale,16.f*scale,teal);
+    auto inputLines=wrapForFont(font,"> "+input+"_",dialog.width-47.f*scale,20.f*scale);
     const int count=std::min<int>((int)inputLines.size(),3);
-    for(int i=0;i<count;i++)
-        text(font,inputLines[inputLines.size()-count+i],inputBox.x+13.f*scale,
-             inputBox.y+36.f*scale+i*inHeight,19.f*scale,bone);
-    text(font,"ENTER  SEND    ESC  CANCEL",frame.x+pad,frame.y+frame.height-17.f*scale,12.f*scale,dim);
+    for(int line=0;line<count;line++)
+        text(font,inputLines[inputLines.size()-count+line],dialog.x+24.f*scale,
+             dialog.y+49.f*scale+line*24.f*scale,20.f*scale,bone);
+    text(font,"ENTER  SEND     ESC  CANCEL",
+         dialog.x+24.f*scale,dialog.y+128.f*scale,13.f*scale,dim);
 }
 static void overlay(const World& w,const AIService& ai,const AgentExecutor& executor,
                     Font font,bool chat,const std::string& input,bool pause,bool controls,bool debug,bool showMap,int chatScroll){
