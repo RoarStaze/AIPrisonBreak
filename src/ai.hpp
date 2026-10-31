@@ -25,18 +25,21 @@ public:
     std::string status="OLLAMA: READY";
     bool busy() const;
     bool hasPendingConversation() const;
+    void noteOutcome(const std::string& verifiedResult);
     bool requestPatrol(const World& world);
     bool submitMessage(const World& world,const std::string& message);
     std::optional<Reply> poll();
     const std::vector<DialogueTurn>& history() const{return turns;}
 private:
-    struct Request {ReplyKind kind; std::string observation,playerText;};
+    struct Request {ReplyKind kind; std::string observation,playerText,retryHint;};
     std::deque<Request> waiting;
     std::vector<DialogueTurn> turns;
+    std::deque<std::string> outcomes;
     Transport transport;
     std::future<std::string> pending;
     Request active{ReplyKind::Patrol,"",""};
     void launch(Request request);
-    static std::string query(const std::string& model,const Request& request,const std::vector<DialogueTurn>& history);
+    static std::string query(const std::string& model,const Request& request,const std::vector<DialogueTurn>& history,
+                             const std::deque<std::string>& outcomes);
 };
 }

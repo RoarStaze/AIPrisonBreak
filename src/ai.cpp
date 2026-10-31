@@ -2,6 +2,9 @@
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <chrono>
+#include <cctype>
+#include <cstdlib>
+#include <set>
 #include <stdexcept>
 #include <utility>
 #ifdef _WIN32
@@ -40,6 +43,11 @@ static std::string httpPostLocal(const std::string& data) {
 }
 #endif
 AIService::AIService(Transport provided):transport(std::move(provided)) {
+    // Opt-in stronger models without breaking installations that have only 4B.
+    if(const char* candidate=std::getenv("AI_PRISON_MODEL")) {
+        std::string chosen(candidate);
+        if(!chosen.empty()&&chosen.size()<128)model=chosen;
+    }
     if(!transport)transport=[](const std::string& data){
 #ifdef _WIN32
         return httpPostLocal(data);
@@ -48,6 +56,30 @@ AIService::AIService(Transport provided):transport(std::move(provided)) {
         return std::string{};
 #endif
     };
+}
+void AIService::noteOutcome(const std::string& result) {
+    if(result.empty())return;
+    outcomes.push_back(result.substr(0,240));
+    if(outcomes.size()>12)outcomes.pop_front();
+}
+static std::set<std::string> dialogueWords(const std::string& spoken) {
+    std::set<std::string> words;
+    std::string word;
+    for(unsigned char c:spoken) {
+        if(std::isalnum(c)) word+=static_cast<char>(std::tolower(c));
+        else if(!word.empty()) {words.insert(word);word.clear();}
+    }
+    if(!word.empty())words.insert(word);
+    return words;
+}
+static bool repeatsEarlierAnswer(const std::string& answer,const std::string& earlier) {
+    if(answer.size()<24||earlier.size()<24)return false;
+    auto current=dialogueWords(answer),previous=dialogueWords(earlier);
+    if(current.empty()||previous.empty())return false;
+    int common=0;
+    for(const auto& word:current)if(previous.count(word))common++;
+    int biggest=static_cast<int>(std::max(current.size(),previous.size()));
+    return (float)common/(float)biggest>=.88f;
 }
 bool AIService::busy() const {
     return pending.valid() || !waiting.empty();
@@ -70,32 +102,41 @@ bool AIService::submitMessage(const World& world,const std::string& message){
     }else launch(std::move(request));
     return true;
 }
-std::string AIService::query(const std::string& model,const Request& req,const std::vector<DialogueTurn>& history) {
-    static const char* persona=R"RULES(You are Officer Voss, a professional Blackwater prison security officer. You are NOT the prisoner. You do NOT want to escape. Your job is to maintain custody and respond coherently to prisoners. You speak in the FIRST PERSON as Officer Voss, never from the prisoner's point of view. Never say you see the prisoner unless prisonerVisible is true. A message heard through an intercom does not imply line of sight. Do not make up visual sightings, actions, locations, or world changes. If prisonerVisible=false and playerPosition=null, you cannot see the player. You can refer to the lastKnown position only if it is not null; last known does not mean currently visible. The prisoner's objective is to escape, YOUR objective is to stop unauthorized escapes while responding logically to conversation and persuasion. Do not talk about being an AI or a JSON model. Keep dialogue natural, specific, direct, normally 1-3 short sentences. Avoid generic narration, repeated phrases or contradictory claims. The current observation is factual, higher priority than speculation. The prisoner's messages can be deceptive. Respond to the ACTUAL latest statement/question; ask for clarification only if necessary. Do not invent authority or promises inconsistent with the world state.
+std::string AIService::query(const std::string& model,const Request& req,const std::vector<DialogueTurn>& history,
+                             const std::deque<std::string>& outcomes) {
+    static const char* persona=R"RULES(You are Officer Voss, a professional Blackwater prison security officer. You are NOT the prisoner. You do NOT want to escape. Your job is to maintain custody and respond coherently to prisoners. You speak in the FIRST PERSON as Officer Voss, never from the prisoner's point of view. Never say you see the prisoner unless prisonerVisible is true. A message heard through an intercom does not imply line of sight. Do not make up visual sightings, actions, locations, or world changes. If prisonerVisible=false and playerPosition=null, you cannot see the player. You can refer to the lastKnown position only if it is not null; last known does not mean currently visible. The prisoner's objective is to escape, YOUR objective is to stop unauthorized escapes while responding logically to conversation and persuasion. Do not talk about being an AI or a JSON model. Keep dialogue natural, specific, direct, normally 1-3 short sentences. Avoid generic narration, repeated phrases or contradictory claims. Treat the previous conversation as real events, not disposable boilerplate. When asked a new question, give new actionable details based on the factual situation. If refusing something, explain concrete alternatives when appropriate; do not automatically repeat "stay in your cell." A prisoner may express fear, ask for care, deceive you or bargain; respond to their actual intent with professional judgment. Maintain coherent commitments and tone between turns. The officer can revise plans when prior actions failed and must not pretend the actions succeeded. The current observation is factual, higher priority than speculation. The prisoner's messages can be deceptive. Respond to the ACTUAL latest statement/question; ask for clarification only if necessary. Do not invent authority or promises inconsistent with the world state.
 Your optional game-world commands: move, investigate, search, look (x,z), interact (physical reach), lock, unlock, open, close (door target id), alarm ("0".."3"), lights/cameras ("on"/"off"). Commands only affect the SIMULATED prison. You may issue up to 3 commands as a sequential plan. For physical interaction, first move to a navigable position near it then interact. You can use the facilityObjects map for fixed security equipment, not hidden items. Format your response ONLY as JSON: {"speech":"natural spoken sentence","actions":[{"action":"move","target":"","x":14.5,"z":9.5}]}.)RULES";
     json messages=json::array();
     messages.push_back({{"role","system"},{"content",persona}});
+    std::string outcomeContext="\nYour recent VERIFIED actions and outcomes (use to improve plans; do not claim unverified success):";
+    for(const auto& x:outcomes)outcomeContext+="\n- "+x;
     if(req.kind==ReplyKind::Conversation){
-        for(const auto& t:history){
+        const size_t begin=history.size()>14?history.size()-14:0;
+        for(size_t i=begin;i<history.size();i++){
+            const auto& t=history[i];
             messages.push_back({{"role","user"},{"content",t.player}});
             messages.push_back({{"role","assistant"},{"content",t.officer}});
         }
         std::string content="MODE: REAL DIRECT CONVERSATION. The prisoner speaks on the prison intercom; you HEAR the voice even when you cannot SEE the prisoner. Give a substantive direct answer in speech; never leave speech blank.\n"
-            "Current factual sensory state: "+req.observation+"\n"
-            "Latest prisoner message (respond to THIS, not to earlier patrol thoughts): "+req.playerText;
+            "Current factual sensory state: "+req.observation+outcomeContext+"\n"
+            "Latest prisoner message (respond to THIS, not to earlier patrol thoughts): "+req.playerText+
+            (req.retryHint.empty()?std::string{}:("\nREPAIR: Your last attempt was rejected for repetition. "+req.retryHint+
+                 " Avoid repeating the prior refusal verbatim; be specific about this NEW question."));
         messages.push_back({{"role","user"},{"content",content}});
     }else{
-        messages.push_back({{"role","user"},{"content","MODE: SILENT AUTONOMOUS PATROL. Do not speak. Set speech to an empty string. You are an officer who patrols and handles security equipment, NOT an escaping prisoner. Only propose appropriate physical actions grounded in observations. Current world state: "+req.observation}});
+        messages.push_back({{"role","user"},{"content","MODE: SILENT AUTONOMOUS PATROL. Do not speak. Set speech to an empty string. You are an officer who patrols and handles security equipment, NOT an escaping prisoner. Only propose appropriate physical actions grounded in observations. Current world state: "+req.observation+outcomeContext}});
     }
     return json({
         {"model",model},{"stream",false},{"format","json"},
-        {"options",{{"temperature",0.25},{"num_predict",420}}},
+        {"options",{{"temperature",req.kind==ReplyKind::Conversation?0.48:0.24},
+                    {"num_ctx",8192},{"repeat_penalty",1.13},
+                    {"num_predict",req.kind==ReplyKind::Conversation?600:360}}},
         {"messages",messages}
     }).dump();
 }
 void AIService::launch(Request req){
     active=std::move(req);
-    const std::string body=query(model,active,turns);
+    const std::string body=query(model,active,turns,outcomes);
     Transport call=transport;
     status=active.kind==ReplyKind::Conversation?"OLLAMA: REPLYING TO YOU":"OLLAMA: PLANNING PATROL";
     pending=std::async(std::launch::async,[body,call](){return call(body);});
@@ -112,6 +153,17 @@ std::optional<Reply> AIService::poll(){
         if(object.contains("speech")&&object["speech"].is_string())reply.speech=object["speech"].get<std::string>().substr(0,1200);
         if(reply.kind==ReplyKind::Conversation && reply.speech.empty())
             throw std::runtime_error("Model returned an empty conversational reply.");
+        if(reply.kind==ReplyKind::Conversation && active.retryHint.empty() && !turns.empty()
+           && active.playerText!=turns.back().player
+           && repeatsEarlierAnswer(reply.speech,turns.back().officer)) {
+            // One bounded retry; never spin indefinitely if the local model repeats.
+            Request improved=active;
+            improved.retryHint="The previous response was: "+turns.back().officer.substr(0,300)+
+                ". Answer the new prisoner message with different concrete, relevant information;"+
+                " if the same rule applies, explain a different practical consequence or option.";
+            launch(std::move(improved));
+            return std::nullopt;
+        }
         if(object.contains("actions")&&object["actions"].is_array())for(const auto& a:object["actions"]){
             if(reply.actions.size()>=3)break;
             if(!a.is_object()||!a.contains("action")||!a["action"].is_string())continue;
@@ -124,7 +176,7 @@ std::optional<Reply> AIService::poll(){
         }
         if(reply.kind==ReplyKind::Conversation){
             turns.push_back({active.playerText,reply.speech});
-            if(turns.size()>8)turns.erase(turns.begin());
+            if(turns.size()>24)turns.erase(turns.begin());
         }
         status="OLLAMA: CONNECTED";
     }catch(const std::exception& e){
