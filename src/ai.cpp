@@ -85,7 +85,7 @@ static std::string conflictWithObservedWorld(const std::string& speech,const std
     auto mentions=[&](const char* words){return lower.find(words)!=std::string::npos;};
     if(fact.value("prisonerVisible",false) &&
        (mentions("cannot see you")||mentions("can't see you")||
-        mentions("don't see you")||mentions("cannot see your face")||
+        mentions("where are you")||mentions("don't see you")||mentions("cannot see your face")||
         mentions("can't see your face")||mentions("only hear you"))) {
         return "You actually SEE the prisoner at this location; never deny the current visible observation.";
     }

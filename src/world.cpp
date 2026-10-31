@@ -280,7 +280,9 @@ std::string World::observationJson() const {
     std::ostringstream s;s<<"{\"time\":"<<(int)elapsed<<",\"guard\":{\"x\":"<<guard.pos.x<<",\"z\":"<<guard.pos.z<<",\"facing\":"<<guard.angle
       <<"},\"prisonerVisible\":"<<(o.playerVisible?"true":"false")<<",\"prisonerAudible\":"<<(o.playerAudible?"true":"false")
       <<",\"lastKnown\":"<<(hasLastKnown?(std::string("{\"x\":")+std::to_string(lastKnown.x)+",\"z\":"+std::to_string(lastKnown.z)+"}"):std::string("null"))
-      <<",\"prisonerPosition\":"<<(o.playerVisible?(std::string("{\"x\":")+std::to_string(player.pos.x)+",\"z\":"+std::to_string(player.pos.z)+"}"):std::string("null"))<<",\"alarm\":"<<alert
+      <<",\"prisonerPosition\":"<<(o.playerVisible?(std::string("{\"x\":")+std::to_string(player.pos.x)+",\"z\":"+std::to_string(player.pos.z)+"}"):std::string("null"))
+      <<",\"prisonerZoneIfVisible\":"<<(o.playerVisible?quoted(player.pos.x<10.f?"cell_wing":player.pos.x<18.f?"main_corridor":"security_wing"):std::string("null"))
+      <<",\"guardMoving\":"<<(guard.moving?"true":"false")<<",\"alarm\":"<<alert
       <<",\"lockdown\":"<<(lockdown?"true":"false")<<",\"cameras\":"<<(cameras?"true":"false")<<",\"lights\":"<<(lights?"true":"false")<<",\"doors\":[";
     for(size_t i=0;i<doors.size();i++){const auto& d=doors[i];if(i)s<<",";s<<"{\"id\":"<<quoted(d.id)<<",\"x\":"<<(d.x+.5f)<<",\"z\":"<<(d.z+.5f)<<",\"locked\":"<<(d.locked?"true":"false")<<",\"open\":"<<(d.open?"true":"false")<<"}";}
     // Facility blueprints disclose fixed equipment; portable items require observation.

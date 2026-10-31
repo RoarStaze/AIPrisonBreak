@@ -91,6 +91,7 @@ int main(){
     assert(!glass.lineOfSight(glass.guard.pos,glass.player.pos));
     assert(glass.visualLineOfSight(glass.guard.pos,glass.player.pos));
     assert(glass.perceive().playerVisible);
+    assert(glass.observationJson().find("\"prisonerZoneIfVisible\":\"cell_wing\"")!=std::string::npos);
     assert(glass.conversationObservationJson().find("\"conversationChannel\":\"door_window\"")!=std::string::npos);
     assert(glass.conversationObservationJson().find("\"prisonerVisible\":true")!=std::string::npos);
     glass.guard.angle=1.57f; // guard starts facing away but hears the prisoner at the window
