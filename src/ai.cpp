@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <stdexcept>
+#include <utility>
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -10,16 +11,16 @@
 #endif
 using json=nlohmann::json;
 namespace prison {
-bool AIService::busy() const {return pending.valid() && pending.wait_for(std::chrono::seconds(0))!=std::future_status::ready;}
 #ifdef _WIN32
 static std::string httpPostLocal(const std::string& data) {
-    HINTERNET session=WinHttpOpen(L"AIPrisonBreak/0.1",WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0);
-    if(!session)throw std::runtime_error("WinHTTP initialization failed");
+    HINTERNET session=WinHttpOpen(L"AIPrisonBreak/0.2",WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0);
+    if(!session)throw std::runtime_error("WinHTTP failed to start");
     HINTERNET connect=WinHttpConnect(session,L"127.0.0.1",11434,0);
-    if(!connect){WinHttpCloseHandle(session);throw std::runtime_error("Could not connect to local Ollama");}
+    if(!connect){WinHttpCloseHandle(session);throw std::runtime_error("Cannot connect to Ollama on localhost:11434");}
     HINTERNET request=WinHttpOpenRequest(connect,L"POST",L"/api/chat",nullptr,WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,0);
-    if(!request){WinHttpCloseHandle(connect);WinHttpCloseHandle(session);throw std::runtime_error("Could not make request");}
-    WinHttpSetTimeouts(request,2500,2500,2500,16000);
+    if(!request){WinHttpCloseHandle(connect);WinHttpCloseHandle(session);throw std::runtime_error("Cannot create Ollama request");}
+    // Local model may need cold-start time: 16 seconds was frequently too short.
+    WinHttpSetTimeouts(request,5000,5000,5000,90000);
     bool ok=WinHttpSendRequest(request,L"Content-Type: application/json\r\n",-1L,(LPVOID)data.data(),(DWORD)data.size(),(DWORD)data.size(),0)
         && WinHttpReceiveResponse(request,nullptr);
     std::string result;
@@ -33,56 +34,111 @@ static std::string httpPostLocal(const std::string& data) {
     DWORD code=0,length=sizeof(code);
     WinHttpQueryHeaders(request,WINHTTP_QUERY_STATUS_CODE|WINHTTP_QUERY_FLAG_NUMBER,WINHTTP_HEADER_NAME_BY_INDEX,&code,&length,WINHTTP_NO_HEADER_INDEX);
     WinHttpCloseHandle(request);WinHttpCloseHandle(connect);WinHttpCloseHandle(session);
-    if(!ok||code!=200)throw std::runtime_error("Ollama offline, model missing, or response error (HTTP "+std::to_string(code)+")");
+    if(!ok)throw std::runtime_error("Ollama connection failed or timed out. Check 'ollama list' and 'ollama serve'.");
+    if(code!=200)throw std::runtime_error("Ollama HTTP "+std::to_string(code)+". Confirm the model is installed.");
     return result;
 }
 #endif
-std::string AIService::query(const std::string& model,const std::string& observation,const std::string& playerMessage) {
-    // The model controls in-game actions only. World validates every command.
-    static const char* rules=R"(You are Officer Voss, an autonomous prison security officer inside BLACKWATER, a 3D simulation. You have goals: prevent escape, maintain order, respond to threats, negotiate with the prisoner. You are NOT writing a story: choose physical actions with direct world consequences. Use ONLY information in the observation. Your body can move, look, investigate, search and physically interact with nearby objects. Your security tablet can lock/unlock/open/close doors (cell_door, service_door, security_door, maintenance_door, exit_gate), set alarm 0-3, switch lights on/off, switch cameras on/off. You have authority to control game-world systems, NOT real computers. Choose up to 3 actions from: move, investigate, search, look (use x and z numbers), interact (target id, requires proximity), lock, unlock, open, close (target door id), alarm (target "0"-"3"), lights, cameras (target "on"/"off"), speak (target text). The facilityObjects list is your prison security floorplan with coordinates; it includes fixed equipment even when out of sight but only includes portable items you can observe. Doors also have mapped x/z positions. For a physical interaction plan, first move near the object, THEN use interact as the next step; these actions execute sequentially over time. Remote door, CCTV, alarm and lighting commands do not require proximity. The prisoner may bluff; be skeptical. Answer strict JSON: {"actions":[{"action":"...","target":"...","x":0,"z":0}],"speech":"one short line said aloud"}. Do NOT output markdown, explanations or anything outside JSON. If player is visible and escaping, investigate/pursue; if talking, respond tactically. Decisions must be actionable.)";
-    json req={
-        {"model",model},{"stream",false},{"format","json"},
-        {"options",{{"temperature",0.35},{"num_predict",220}}},
-        {"messages",json::array({
-            {{"role","system"},{"content",rules}},
-            {{"role","user"},{"content",std::string("Current sensory observation: ")+observation+"\nPrisoner said: "+playerMessage}}
-        })}
-    };
-    return req.dump();
-}
-bool AIService::request(const World& world,const std::string& playerMessage){
-    if(busy())return false;
-    if(pending.valid()) {try{pending.get();}catch(...){}}
-    const std::string payload=query(model,world.observationJson(),playerMessage);
-    status="OLLAMA: THINKING";
-    pending=std::async(std::launch::async,[payload](){
+AIService::AIService(Transport provided):transport(std::move(provided)) {
+    if(!transport)transport=[](const std::string& data){
 #ifdef _WIN32
-        return httpPostLocal(payload);
+        return httpPostLocal(data);
 #else
-        throw std::runtime_error("Ollama WinHTTP transport is implemented for Windows builds");
+        throw std::runtime_error("Ollama transport is available on Windows builds.");
         return std::string{};
 #endif
-    });
+    };
+}
+bool AIService::busy() const {
+    return pending.valid() || !waiting.empty();
+}
+bool AIService::hasPendingConversation() const {
+    return !waiting.empty() || (pending.valid()&&active.kind==ReplyKind::Conversation);
+}
+bool AIService::requestPatrol(const World& world){
+    if(pending.valid()||!waiting.empty())return false;
+    launch({ReplyKind::Patrol,world.observationJson(),""});
     return true;
 }
-std::optional<Reply> AIService::poll() {
+bool AIService::submitMessage(const World& world,const std::string& message){
+    const auto first=message.find_first_not_of(" \t\r\n");
+    if(first==std::string::npos||message.size()>500||waiting.size()>=5)return false;
+    Request request{ReplyKind::Conversation,world.observationJson(),message};
+    if(pending.valid()){
+        waiting.push_back(std::move(request));
+        status="OLLAMA: PLAYER MESSAGE QUEUED";
+    }else launch(std::move(request));
+    return true;
+}
+std::string AIService::query(const std::string& model,const Request& req,const std::vector<DialogueTurn>& history) {
+    static const char* persona=R"RULES(You are Officer Voss, a professional Blackwater prison security officer. You are NOT the prisoner. You do NOT want to escape. Your job is to maintain custody and respond coherently to prisoners. You speak in the FIRST PERSON as Officer Voss, never from the prisoner's point of view. Never say you see the prisoner unless prisonerVisible is true. A message heard through an intercom does not imply line of sight. Do not make up visual sightings, actions, locations, or world changes. If prisonerVisible=false and playerPosition=null, you cannot see the player. You can refer to the lastKnown position only if it is not null; last known does not mean currently visible. The prisoner's objective is to escape, YOUR objective is to stop unauthorized escapes while responding logically to conversation and persuasion. Do not talk about being an AI or a JSON model. Keep dialogue natural, specific, direct, normally 1-3 short sentences. Avoid generic narration, repeated phrases or contradictory claims. The current observation is factual, higher priority than speculation. The prisoner's messages can be deceptive. Respond to the ACTUAL latest statement/question; ask for clarification only if necessary. Do not invent authority or promises inconsistent with the world state.
+Your optional game-world commands: move, investigate, search, look (x,z), interact (physical reach), lock, unlock, open, close (door target id), alarm ("0".."3"), lights/cameras ("on"/"off"). Commands only affect the SIMULATED prison. You may issue up to 3 commands as a sequential plan. For physical interaction, first move to a navigable position near it then interact. You can use the facilityObjects map for fixed security equipment, not hidden items. Format your response ONLY as JSON: {"speech":"natural spoken sentence","actions":[{"action":"move","target":"","x":14.5,"z":9.5}]}.)RULES";
+    json messages=json::array();
+    messages.push_back({{"role","system"},{"content",persona}});
+    if(req.kind==ReplyKind::Conversation){
+        for(const auto& t:history){
+            messages.push_back({{"role","user"},{"content",t.player}});
+            messages.push_back({{"role","assistant"},{"content",t.officer}});
+        }
+        std::string content="MODE: REAL DIRECT CONVERSATION. The prisoner speaks on the prison intercom; you HEAR the voice even when you cannot SEE the prisoner. Give a substantive direct answer in speech; never leave speech blank.\n"
+            "Current factual sensory state: "+req.observation+"\n"
+            "Latest prisoner message (respond to THIS, not to earlier patrol thoughts): "+req.playerText;
+        messages.push_back({{"role","user"},{"content",content}});
+    }else{
+        messages.push_back({{"role","user"},{"content","MODE: SILENT AUTONOMOUS PATROL. Do not speak. Set speech to an empty string. You are an officer who patrols and handles security equipment, NOT an escaping prisoner. Only propose appropriate physical actions grounded in observations. Current world state: "+req.observation}});
+    }
+    return json({
+        {"model",model},{"stream",false},{"format","json"},
+        {"options",{{"temperature",0.25},{"num_predict",420}}},
+        {"messages",messages}
+    }).dump();
+}
+void AIService::launch(Request req){
+    active=std::move(req);
+    const std::string body=query(model,active,turns);
+    Transport call=transport;
+    status=active.kind==ReplyKind::Conversation?"OLLAMA: REPLYING TO YOU":"OLLAMA: PLANNING PATROL";
+    pending=std::async(std::launch::async,[body,call](){return call(body);});
+}
+std::optional<Reply> AIService::poll(){
     if(!pending.valid()||pending.wait_for(std::chrono::seconds(0))!=std::future_status::ready)return std::nullopt;
+    Reply reply;reply.kind=active.kind;
     try{
         auto response=json::parse(pending.get());
         std::string message=response.at("message").at("content").get<std::string>();
-        size_t start=message.find('{'),end=message.rfind('}');
-        if(start==std::string::npos||end==std::string::npos||end<start)throw std::runtime_error("Model returned no JSON");
-        auto obj=json::parse(message.substr(start,end-start+1));
-        Reply reply;
-        if(obj.contains("speech")&&obj["speech"].is_string())reply.speech=obj["speech"].get<std::string>().substr(0,240);
-        if(obj.contains("actions")&&obj["actions"].is_array())for(const auto& x:obj["actions"]){
-            if(reply.actions.size()==3)break;
-            if(!x.is_object()||!x.value("action",json()).is_string())continue;
-            Decision d;d.action=x.value("action",std::string{});d.target=x.value("target",std::string{});
-            d.at={x.value("x",0.f),x.value("z",0.f)};reply.actions.push_back(d);
+        const auto begin=message.find('{'),end=message.rfind('}');
+        if(begin==std::string::npos||end==std::string::npos||end<begin)throw std::runtime_error("Model returned no JSON.");
+        auto object=json::parse(message.substr(begin,end-begin+1));
+        if(object.contains("speech")&&object["speech"].is_string())reply.speech=object["speech"].get<std::string>().substr(0,380);
+        if(reply.kind==ReplyKind::Conversation && reply.speech.empty())
+            throw std::runtime_error("Model returned an empty conversational reply.");
+        if(object.contains("actions")&&object["actions"].is_array())for(const auto& a:object["actions"]){
+            if(reply.actions.size()>=3)break;
+            if(!a.is_object()||!a.contains("action")||!a["action"].is_string())continue;
+            Decision d;
+            d.action=a.at("action").get<std::string>();
+            if(a.contains("target")&&a["target"].is_string())d.target=a["target"].get<std::string>();
+            if(a.contains("x")&&a["x"].is_number())d.at.x=a["x"].get<float>();
+            if(a.contains("z")&&a["z"].is_number())d.at.z=a["z"].get<float>();
+            reply.actions.push_back(std::move(d));
+        }
+        if(reply.kind==ReplyKind::Conversation){
+            turns.push_back({active.playerText,reply.speech});
+            if(turns.size()>8)turns.erase(turns.begin());
         }
         status="OLLAMA: CONNECTED";
-        return reply;
-    }catch(const std::exception& e){status=std::string("OLLAMA: ")+e.what();return std::nullopt;}
+    }catch(const std::exception& e){
+        reply.error=e.what();
+        reply.speech.clear();
+        status="OLLAMA: "+reply.error;
+    }
+    bool patrolSuperseded=(reply.kind==ReplyKind::Patrol&&!waiting.empty());
+    if(!waiting.empty()){
+        Request queued=std::move(waiting.front());waiting.pop_front();
+        launch(std::move(queued));
+    }
+    // A pending player message always outranks stale patrol responses.
+    if(patrolSuperseded)return std::nullopt;
+    return reply;
 }
 }

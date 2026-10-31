@@ -1,22 +1,42 @@
 #pragma once
 #include "world.hpp"
 #include <chrono>
+#include <deque>
+#include <functional>
 #include <future>
 #include <optional>
 #include <string>
 #include <vector>
 namespace prison {
-struct Decision { std::string action,target; Point at{}; };
-struct Reply {std::vector<Decision> actions; std::string speech;};
+struct Decision {std::string action,target; Point at{};};
+enum class ReplyKind {Patrol,Conversation};
+struct Reply {
+    std::vector<Decision> actions;
+    std::string speech;
+    std::string error;
+    ReplyKind kind=ReplyKind::Patrol;
+};
+struct DialogueTurn {std::string player,officer;};
 class AIService {
 public:
+    using Transport=std::function<std::string(const std::string&)>;
+    explicit AIService(Transport transport={});
     std::string model="qwen3:4b-instruct";
-    std::string status="OLLAMA: CHECKING";
+    std::string status="OLLAMA: READY";
     bool busy() const;
-    bool request(const World& world,const std::string& playerMessage="");
+    bool hasPendingConversation() const;
+    bool requestPatrol(const World& world);
+    bool submitMessage(const World& world,const std::string& message);
     std::optional<Reply> poll();
+    const std::vector<DialogueTurn>& history() const{return turns;}
 private:
+    struct Request {ReplyKind kind; std::string observation,playerText;};
+    std::deque<Request> waiting;
+    std::vector<DialogueTurn> turns;
+    Transport transport;
     std::future<std::string> pending;
-    static std::string query(const std::string& model,const std::string& observation,const std::string& playerMessage);
+    Request active{ReplyKind::Patrol,"",""};
+    void launch(Request request);
+    static std::string query(const std::string& model,const Request& request,const std::vector<DialogueTurn>& history);
 };
 }
