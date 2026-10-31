@@ -425,7 +425,8 @@ static void overlay(const World& w,const AIService& ai,const AgentExecutor& exec
     }
 }
 int main(){
-    SetConfigFlags(FLAG_MSAA_4X_HINT|FLAG_VSYNC_HINT|FLAG_FULLSCREEN_MODE);
+    // Borderless fullscreen uses the desktop native resolution and refresh rate.
+    SetConfigFlags(FLAG_MSAA_4X_HINT|FLAG_VSYNC_HINT|FLAG_BORDERLESS_WINDOWED_MODE);
     InitWindow(1600,900,"AI PRISON BREAK  |  BLACKWATER");
     SetExitKey(KEY_NULL);
     SetTargetFPS(60);
@@ -444,7 +445,7 @@ int main(){
     while(!WindowShouldClose()){
         float dt=std::min(.05f,GetFrameTime());
         int sw=GetScreenWidth(),sh=GetScreenHeight();
-        if(IsKeyPressed(KEY_F11))ToggleFullscreen();
+        if(IsKeyPressed(KEY_F11))ToggleBorderlessWindowed();
         if(IsKeyPressed(KEY_F1))controls=!controls;
         if(IsKeyPressed(KEY_F3))debug=!debug;
         if(IsKeyPressed(KEY_ESCAPE)){

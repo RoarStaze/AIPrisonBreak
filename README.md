@@ -71,3 +71,14 @@ This is an **early native prototype**. Its modeled props, character, and procedu
 ## Photo materials
 
 Windows build artifacts include CC0 photographic wall, floor and metal textures when the Poly Haven CDN is reachable during CI. The game has procedural offline fallbacks. See [texture credits](docs/ASSET_LICENSES.md).
+
+## 2026-10-31 visual and controls repair
+
+- Horizontal mouse motion now turns the first-person camera in the matching direction.
+- X-oriented partition doors render along the correct wall axis, with hinged open-state geometry.
+- Covered prison ceilings and material lighting replace the black unbounded sky. Flashlight now illuminates textured walls rather than rendering a small fake orb.
+- Minimalist cinematic fullscreen HUD: F1 controls, hold Tab for map, F3 diagnostics.
+- Interaction prompts target what the crosshair faces rather than selecting nearby offscreen items.
+- Fullscreen uses borderless native desktop resolution; F11 toggles between borderless and windowed modes.
+
+**Graphics note:** These are engine and scene repairs, not a finished AAA environment. The live rendered scene needs testing on a Windows gaming PC.
