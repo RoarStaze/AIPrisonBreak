@@ -8,6 +8,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -486,6 +487,8 @@ int main(){
     float yaw=1.77f,pitch=0.f,worldTick=0.f,brainTick=0.f;
     bool paused=false,chat=false,flashlight=true,controls=false,debug=false;
     std::string input;
+    const bool previewCapture=std::getenv("AI_PRISON_PREVIEW")!=nullptr;
+    int captureFrames=0;
     while(!WindowShouldClose()){
         float dt=std::min(.05f,GetFrameTime());
         int sw=GetScreenWidth(),sh=GetScreenHeight();
@@ -555,6 +558,10 @@ int main(){
         EndMode3D();
         overlay(w,ai,executor,font,chat,input,paused,controls,debug,IsKeyDown(KEY_TAB));
         EndDrawing();
+        if(previewCapture && ++captureFrames>=30){
+            TakeScreenshot("AIPrisonBreak-preview.png");
+            break;
+        }
     }
     UnloadTexture(concrete);UnloadTexture(floor);UnloadTexture(steel);
     freeProps();

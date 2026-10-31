@@ -59,6 +59,28 @@ jobs:
               Write-Warning "Could not bundle $($prop.name): $($_.Exception.Message)"
             }
           }
+      - name: Optional real-render smoke capture
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $env:AI_PRISON_PREVIEW = "1"
+          $app = (Resolve-Path "build/Release/AIPrisonBreak.exe").Path
+          $dir = (Resolve-Path "build/Release").Path
+          $p = Start-Process -FilePath $app -WorkingDirectory $dir -PassThru
+          if (-not $p.WaitForExit(25000)) {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            throw "Graphics runner could not capture a live scene in 25 seconds."
+          }
+          if (-not (Test-Path "$dir/AIPrisonBreak-preview.png")) {
+            Write-Warning "No screenshot produced; GitHub runner may not provide interactive graphics."
+          }
+      - name: Upload optional rendered screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIPrisonBreak-render-smoke
+          path: build/Release/AIPrisonBreak-preview.png
+          if-no-files-found: warn
       - name: Upload native fullscreen Windows game
         uses: actions/upload-artifact@v4
         with:
