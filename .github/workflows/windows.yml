@@ -37,6 +37,28 @@ jobs:
               Write-Warning "Could not fetch $($asset.name): $($_.Exception.Message). Procedural fallback will be used."
             }
           }
+      - name: Bundle authored-scale CC0 prison props
+        shell: pwsh
+        run: |
+          $dir = "build/Release/assets/models"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $props = @(
+            @{ name = "cell_bunk.glb"; url = "https://cdn.3dassets.dev/assets/25595/v1/model.glb" },
+            @{ name = "toilet_sink.glb"; url = "https://cdn.3dassets.dev/assets/25597/v1/model.glb" },
+            @{ name = "cctv.glb"; url = "https://cdn.3dassets.dev/assets/25643/v1/model.glb" },
+            @{ name = "control_desk.glb"; url = "https://cdn.3dassets.dev/assets/25646/v1/model.glb" },
+            @{ name = "ceiling_fixture.glb"; url = "https://cdn.3dassets.dev/assets/25615/v1/model.glb" }
+          )
+          foreach ($prop in $props) {
+            try {
+              $destination = Join-Path $dir $prop.name
+              Invoke-WebRequest -Uri $prop.url -OutFile $destination -TimeoutSec 45 -ErrorAction Stop
+              if ((Get-Item $destination).Length -lt 10000) { throw "Invalid GLB download size" }
+              Write-Host "Bundled model $($prop.name)"
+            } catch {
+              Write-Warning "Could not bundle $($prop.name): $($_.Exception.Message)"
+            }
+          }
       - name: Upload native fullscreen Windows game
         uses: actions/upload-artifact@v4
         with:

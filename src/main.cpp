@@ -154,6 +154,34 @@ static void texturedBox(Texture2D texture,Vector3 pos,float sx,float sy,float sz
     if(gUseLighting)gSurfaceCube.materials[0].shader=gPrisonLight;
     DrawModelEx(gSurfaceCube,pos,v3(0,1,0),0,v3(sx,sy,sz),tint);
 }
+// Optional high-detail CC0 institutional meshes from the matching prison kit.
+// All are drawn at authoring-scale (metres, Y up); load failure uses procedural props.
+struct ImportedProps {
+    Model bunk{},toilet{},camera{},desk{},fixture{};
+};
+static ImportedProps gProps{};
+static Model loadProp(const char* filename) {
+    if(!FileExists(filename))return {};
+    Model model=LoadModel(filename);
+    if(!model.meshCount)return {};
+    return model;
+}
+static void initProps(){
+    gProps.bunk=loadProp("assets/models/cell_bunk.glb");
+    gProps.toilet=loadProp("assets/models/toilet_sink.glb");
+    gProps.camera=loadProp("assets/models/cctv.glb");
+    gProps.desk=loadProp("assets/models/control_desk.glb");
+    gProps.fixture=loadProp("assets/models/ceiling_fixture.glb");
+}
+static void freeProps(){
+    for(Model *m:{&gProps.bunk,&gProps.toilet,&gProps.camera,&gProps.desk,&gProps.fixture})
+        if(m->meshCount)UnloadModel(*m);
+}
+static bool drawProp(const Model& model,Vector3 p,float turn=0.f){
+    if(model.meshCount==0)return false;
+    DrawModelEx(model,p,v3(0,1,0),turn,v3(1,1,1),WHITE);
+    return true;
+}
 static void drawDoor(const Door& d,Texture2D steel){
     DoorVisual leaf=doorVisual(d.x,d.z,d.open);
     const float x=d.x+.5f,z=d.z+.5f;
@@ -246,8 +274,8 @@ static void worldGeometry(const World& w,Texture2D concrete,Texture2D floor,Text
         box(x+.5f,3.21f,16.4f,.14f,.23f,4.7f,rgba(43,54,61));
     }
     for(int z=3;z<World::height-1;z+=5){
-        box(5.2f,3.04f,z+.5f,1.18f,.08f,.42f,rgba(196,205,192));
-        box(14.1f,3.04f,z+.5f,1.18f,.08f,.42f,rgba(196,205,192));
+        if(!drawProp(gProps.fixture,v3(5.2f,2.93f,z+.5f)))box(5.2f,3.04f,z+.5f,1.18f,.08f,.42f,rgba(196,205,192));
+        if(!drawProp(gProps.fixture,v3(14.1f,2.93f,z+.5f)))box(14.1f,3.04f,z+.5f,1.18f,.08f,.42f,rgba(196,205,192));
         if(w.lights){
             box(5.2f,3.002f,z+.5f,1.07f,.01f,.32f,rgba(241,235,204));
             box(14.1f,3.002f,z+.5f,1.07f,.01f,.32f,rgba(241,235,204));
@@ -257,14 +285,21 @@ static void worldGeometry(const World& w,Texture2D concrete,Texture2D floor,Text
         beam(v3(9.75f,2.86f,z),v3(9.75f,2.86f,z+3.7f),.055f,rgba(84,95,97));
         beam(v3(18.24f,2.86f,z),v3(18.24f,2.86f,z+3.7f),.046f,rgba(82,90,99));
     }
-    // Beds and metal furniture in the cells.
-    for(int z: {3,8,13}){
-        box(3.22f,.42f,z+.55f,2.0f,.13f,.93f,rgba(54,63,69));
-        box(3.22f,.515f,z+.55f,1.91f,.12f,.84f,rgba(100,112,112));
-        box(2.68f,.59f,z+.55f,.65f,.1f,.7f,rgba(170,177,165));
-        for(float x:{2.3f,4.14f})for(float zz:{z+.17f,z+.98f})beam(v3(x,.08f,zz),v3(x,.45f,zz),.045f,rgba(47,55,58));
-        box(7.85f,.85f,z+.2f,.85f,1.7f,.72f,rgba(56,67,72));
-        for(int n=0;n<3;n++)box(8.29f,.54f+n*.38f,z+.2f,.015f,.22f,.48f,rgba(38,48,53));
+    // Authored-scale detailed prison furniture replaces cube props when available.
+    for(int z:{3,8,13}){
+        if(!drawProp(gProps.bunk,v3(3.22f,0.f,z+.55f),90.f)){
+            box(3.22f,.42f,z+.55f,2.f,.13f,.93f,rgba(57,66,71));
+            box(3.22f,.515f,z+.55f,1.91f,.12f,.84f,rgba(129,138,138));
+            box(2.68f,.59f,z+.55f,.65f,.1f,.7f,rgba(182,189,179));
+            for(float x:{2.3f,4.14f})for(float zz:{z+.17f,z+.98f})
+                beam(v3(x,.08f,zz),v3(x,.45f,zz),.045f,rgba(47,55,58));
+        }
+        if(!drawProp(gProps.toilet,v3(6.82f,0.f,z+.55f),90.f)){
+            DrawCylinder(v3(6.82f,.35f,z+.55f),.21f,.25f,.7f,14,rgba(177,186,187));
+            box(6.82f,.8f,z+.79f,.6f,.45f,.23f,rgba(143,158,160));
+        }
+        box(7.85f,.85f,z+.2f,.85f,1.7f,.72f,rgba(70,84,88));
+        for(int n=0;n<3;n++)box(8.29f,.54f+n*.38f,z+.2f,.015f,.22f,.48f,rgba(39,49,55));
     }
     // Pipes, wall marks, signs and industrial equipment.
     for(int z=2;z<18;z+=3){
@@ -275,17 +310,21 @@ static void worldGeometry(const World& w,Texture2D concrete,Texture2D floor,Text
         box(11.25f+n*1.3f,2.36f,1.03f,.86f,.54f,.05f,rgba(32,37,40));
         for(int v=0;v<5;v++)box(10.9f+n*1.3f+v*.17f,2.36f,1.063f,.05f,.42f,.012f,rgba(109,117,116));
     }
-    // CCTV security cameras on articulated mounts.
-    for(Point c: {Point{13.5f,3.5f},Point{22.5f,15.5f}}){
-        beam(v3(c.x,3.05f,c.z),v3(c.x,2.73f,c.z),.055f,rgba(105,112,116));
-        box(c.x,2.65f,c.z,.37f,.19f,.38f,rgba(40,49,54));
-        DrawSphere(v3(c.x,2.62f,c.z+.215f),.11f,rgba(15,22,29));
-        if(w.cameras)warningLight(c.x+.2f,2.7f,c.z,time,rgba(239,51,42));
+    // Modelled CCTV units on overhead mounts.
+    for(Point cam:{Point{13.5f,3.5f},Point{22.5f,15.5f}}){
+        if(!drawProp(gProps.camera,v3(cam.x,2.62f,cam.z),90.f)){
+            beam(v3(cam.x,3.05f,cam.z),v3(cam.x,2.73f,cam.z),.055f,rgba(105,112,116));
+            box(cam.x,2.65f,cam.z,.37f,.19f,.38f,rgba(54,66,73));
+            DrawSphere(v3(cam.x,2.62f,cam.z+.215f),.11f,rgba(16,24,28));
+        }
+        if(w.cameras)warningLight(cam.x+.2f,2.78f,cam.z,time,rgba(239,51,42));
     }
     // Terminal and generator.
-    box(21.5f,.72f,4.5f,1.3f,1.44f,.67f,rgba(43,53,60));
-    box(21.5f,1.21f,4.86f,.91f,.52f,.06f,w.cameras?rgba(17,120,119):rgba(87,45,40));
-    for(int n=0;n<5;n++)box(21.2f+n*.14f,1.05f,4.902f,.085f,.015f,.008f,rgba(134,209,182));
+    if(!drawProp(gProps.desk,v3(21.5f,0.f,4.5f))){
+        box(21.5f,.72f,4.5f,1.3f,1.44f,.67f,rgba(56,69,76));
+        box(21.5f,1.21f,4.86f,.91f,.52f,.06f,w.cameras?rgba(17,120,119):rgba(87,45,40));
+        for(int n=0;n<5;n++)box(21.2f+n*.14f,1.05f,4.902f,.085f,.015f,.008f,rgba(134,209,182));
+    }
     box(22.5f,.88f,13.5f,1.5f,1.76f,.8f,rgba(69,78,72));
     for(int k=0;k<5;k++)beam(v3(21.92f,1.12f+k*.15f,13.91f),v3(23.08f,1.12f+k*.15f,13.91f),.025f,rgba(31,35,38));
     warningLight(22.5f,1.84f,13.5f,time,rgba(229,145,74));
@@ -433,6 +472,7 @@ int main(){
     DisableCursor();
     Font font=interfaceFont();
     initLighting();
+    initProps();
     Texture2D concrete=loadEnvironmentTexture("assets/textures/concrete_wall_001.jpg",53,false);
     Texture2D floor=loadEnvironmentTexture("assets/textures/concrete_floor_worn_001.jpg",46,false);
     Texture2D steel=loadEnvironmentTexture("assets/textures/rusty_metal_02.jpg",23,true);
@@ -513,6 +553,7 @@ int main(){
         EndDrawing();
     }
     UnloadTexture(concrete);UnloadTexture(floor);UnloadTexture(steel);
+    freeProps();
     if(gSurfaceCube.meshCount)UnloadModel(gSurfaceCube);
     releaseLighting();
     if(font.texture.id && font.texture.id!=GetFontDefault().texture.id)UnloadFont(font);
