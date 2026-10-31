@@ -299,7 +299,7 @@ static void worldGeometry(const World& w,Texture2D concrete,Texture2D floor,Text
 }
 static Font interfaceFont(){
 #ifdef _WIN32
-    Font f=LoadFontEx("C:/Windows/Fonts/segoeui.ttf",28,nullptr,0);
+    Font f=LoadFontEx("C:/Windows/Fonts/segoeui.ttf",48,nullptr,0);
     if(f.texture.id)return f;
 #endif
     return GetFontDefault();
@@ -326,50 +326,102 @@ static void minimap(const World& w,int screenW,int screenH){
     DrawCircle((int)(x+w.player.pos.x*scale),(int)(y+w.player.pos.z*scale),3.7f,rgba(141,231,201));
     DrawCircle((int)(x+w.guard.pos.x*scale),(int)(y+w.guard.pos.z*scale),3.5f,rgba(238,91,83));
 }
-static void overlay(const World& w,const AIService& ai,const AgentExecutor& executor,Font font,bool chat,const std::string& input,bool pause){
+static void centeredText(Font font,const std::string& caption,float center,float y,float size,Color color){
+    Vector2 bounds=MeasureTextEx(font,caption.c_str(),size,1.1f);
+    text(font,caption,center-bounds.x*.5f,y,size,color);
+}
+static void overlay(const World& w,const AIService& ai,const AgentExecutor& executor,
+                    Font font,bool chat,const std::string& input,bool pause,bool controls,bool debug,bool showMap){
     int sw=GetScreenWidth(),sh=GetScreenHeight();
-    DrawRectangleGradientV(0,0,sw,142,rgba(4,11,17,205),rgba(4,11,17,0));
-    text(font,"BLACKWATER  /  C-BLOCK",32,20,16,rgba(149,203,208));
-    text(font,w.lockdown?"LOCKDOWN   ACTIVE":"SECURITY  SYSTEM  NORMAL",31,51,29,w.lockdown?rgba(236,104,89):rgba(126,220,183));
-    text(font,"YOU ARE IN RESTRICTED CUSTODY",32,88,14,rgba(185,196,189));
-    panel({(float)sw-335,22,302,83},rgba(5,17,24,205));
-    text(font,"OFFICER VOSS / AUTONOMOUS AGENT",sw-321.f,33,13,rgba(145,184,190));
-    text(font,ai.status.substr(0,37),sw-321.f,54,13,rgba(231,169,95));
-    text(font,executor.description().substr(0,39),sw-321.f,74,12,rgba(166,204,189));
-    DrawRectangleGradientV(0,sh-165,sw,165,rgba(4,11,18,0),rgba(3,8,13,225));
-    text(font,w.status,30,(float)sh-123,19,rgba(231,224,205));
-    text(font,"WASD MOVE    SHIFT SPRINT    C CROUCH    E INTERACT    T TALK    F FLASHLIGHT    ESC PAUSE",30,(float)sh-69,13,rgba(172,193,193));
-    text(font,"STAMINA",30,(float)sh-46,12,rgba(181,193,187));
-    bar(105,(float)sh-41,160,w.player.stamina,rgba(105,216,185));
-    text(font,"ALERT  "+std::to_string(w.alert)+" / 3",296,(float)sh-46,12,w.alert>1?rgba(241,102,94):rgba(205,192,138));
-    text(font,w.hasHairpin?"HAIRPIN +":"HAIRPIN -",400,(float)sh-46,12,rgba(198,200,179));
-    text(font,w.hasCard?"CARD +":"CARD -",513,(float)sh-46,12,rgba(198,200,179));
-    minimap(w,sw,sh);
-    int cx=sw/2,cy=sh/2;
-    DrawLine(cx-7,cy,cx-2,cy,rgba(205,224,218,195));
-    DrawLine(cx+2,cy,cx+7,cy,rgba(205,224,218,195));
-    DrawLine(cx,cy-7,cx,cy-2,rgba(205,224,218,195));
-    DrawLine(cx,cy+2,cx,cy+7,rgba(205,224,218,195));
-    panel({30,(float)sh-236,std::min(620.f,(float)sw-60),61},rgba(6,17,24,192));
-    text(font,"VOSS: "+w.guardSpeech.substr(0,77),43,(float)sh-216,16,rgba(217,226,221));
-    if(chat) {
-        Rectangle r={sw*.15f,sh*.68f,sw*.7f,105};
-        panel(r,rgba(5,16,23,244));
-        text(font,"SPEAK TO OFFICER VOSS  /  ENTER TO SEND  /  ESC TO CANCEL",r.x+20,r.y+14,15,rgba(159,212,214));
-        text(font,"> "+input+"_",r.x+20,r.y+52,23,rgba(241,237,218));
+    float scale=std::clamp(std::min(sw/1600.f,sh/900.f),.80f,1.40f);
+    float left=36*scale,top=26*scale;
+    Color bone=rgba(232,233,223),dim=rgba(175,192,195),teal=rgba(151,225,210),red=rgba(244,103,92);
+    // Transparent architectural HUD: information is overlaid, never embedded in web-like panels.
+    DrawRectangleGradientV(0,0,sw,static_cast<int>(113*scale),rgba(6,13,19,180),rgba(6,13,19,0));
+    text(font,"BLACKWATER",left,top,24*scale,bone);
+    text(font,"BLOCK C  /  MAXIMUM SECURITY",left,top+32*scale,13*scale,dim);
+    const std::string alarm="SECURITY "+std::to_string(w.alert)+" / 3";
+    const float right=sw-230*scale;
+    text(font,alarm,right,top,17*scale,w.alert>1?red:teal);
+    text(font,w.lockdown?"LOCKDOWN IN EFFECT":"PATROL NORMAL",right,top+29*scale,12*scale,dim);
+
+    // In-world reticle, subtler than a web cursor.
+    float cx=sw*.5f,cy=sh*.5f;
+    DrawCircleLines((int)cx,(int)cy,4*scale,rgba(232,242,240,175));
+    DrawCircle((int)cx,(int)cy,1.5f*scale,rgba(249,249,237));
+    std::string hint=w.interactionHint();
+    if(!pause&&!chat&&!w.caught&&!w.escaped&&!hint.empty()){
+        float width=MeasureTextEx(font,hint.c_str(),19*scale,1.1f).x+52*scale;
+        Rectangle prompt={cx-width/2,cy+32*scale,width,42*scale};
+        panel(prompt,rgba(9,24,30,212));
+        centeredText(font,hint,cx,prompt.y+9*scale,19*scale,bone);
+    }
+    DrawRectangleGradientV(0,sh-(int)(200*scale),sw,(int)(200*scale),rgba(5,12,17,0),rgba(4,10,16,213));
+    std::string task=!w.hasHairpin?"FIND A TOOL TO PICK THE CELL LOCK":
+                      !w.hasCard?"REACH SECURITY  /  RECOVER A KEYCARD":
+                      "REACH THE EXIT  /  ESCAPE BLACKWATER";
+    text(font,"OBJECTIVE",left,sh-133*scale,13*scale,teal);
+    text(font,task,left,sh-102*scale,18*scale,bone);
+    const float by=sh-50*scale;
+    text(font,"STAMINA",left,by-4*scale,12*scale,dim);
+    bar(left+85*scale,by+5*scale,150*scale,w.player.stamina,teal);
+    text(font,w.player.crouching?"CROUCHED":w.player.moving?"MOVING":"STILL",left+256*scale,by-5*scale,12*scale,dim);
+    text(font,w.hasHairpin?"HAIRPIN": "NO TOOL",left+370*scale,by-4*scale,12*scale,w.hasHairpin?teal:dim);
+    text(font,w.hasCard?"KEYCARD":"NO CARD",left+470*scale,by-4*scale,12*scale,w.hasCard?teal:dim);
+
+    if(w.elapsed<18.f&&!chat&&!pause) {
+        centeredText(font,"WASD  MOVE     E  INTERACT     T  SPEAK     F1  CONTROLS",cx,sh-32*scale,12*scale,dim);
+    }
+
+    // Dialogue appears inside the world view, not an HTML textbox.
+    if(chat){
+        float pw=std::min(sw-50*scale,920*scale), px=(sw-pw)*.5f;
+        Rectangle dialog={px,sh-335*scale,pw,164*scale};
+        panel(dialog,rgba(4,15,20,245));
+        DrawRectangle(px,dialog.y,3*scale,dialog.height,teal);
+        text(font,"OFFICER VOSS  /  LIVE AI CONVERSATION",px+24*scale,dialog.y+20*scale,16*scale,teal);
+        text(font,"> "+input+"_",px+24*scale,dialog.y+62*scale,21*scale,bone);
+        text(font,"ENTER  SEND     ESC  CANCEL",px+24*scale,dialog.y+126*scale,13*scale,dim);
+    } else if(!w.guardSpeech.empty()&&!pause) {
+        float wmsg=std::min(sw*.64f,860.f*scale);
+        Rectangle r={(sw-wmsg)*.5f,sh-217*scale,wmsg,51*scale};
+        panel(r,rgba(5,16,21,216));
+        centeredText(font,"VOSS   "+w.guardSpeech.substr(0,100),sw*.5f,r.y+13*scale,16*scale,bone);
+    }
+
+    if(showMap&&!pause&&!chat)minimap(w,sw,sh);
+    if(debug&&!pause){
+        panel({sw-380*scale,112*scale,344*scale,98*scale},rgba(9,19,26,213));
+        text(font,ai.status.substr(0,34),sw-363*scale,125*scale,15*scale,teal);
+        text(font,executor.description().substr(0,32),sw-363*scale,153*scale,13*scale,dim);
+        text(font,"FPS "+std::to_string(GetFPS()),sw-363*scale,179*scale,12*scale,dim);
+    }
+    if(controls&&!pause&&!chat){
+        panel({sw*.5f-350*scale,sh*.5f-170*scale,700*scale,340*scale},rgba(5,18,23,244));
+        centeredText(font,"CONTROLS",cx,sh*.5f-134*scale,33*scale,bone);
+        const char* lines[]={
+            "WASD  /  MOVE             MOUSE  /  LOOK",
+            "LEFT SHIFT  /  SPRINT     C  /  CROUCH",
+            "E  /  INTERACT           T  /  TALK TO VOSS",
+            "F  /  FLASHLIGHT         TAB  /  MAP",
+            "ESC  /  PAUSE             F11  /  FULLSCREEN",
+            "F1  /  CLOSE HELP         F3  /  DIAGNOSTICS"
+        };
+        for(int i=0;i<6;i++)centeredText(font,lines[i],cx,sh*.5f-74*scale+i*36*scale,16*scale,dim);
     }
     if(pause) {
-        DrawRectangle(0,0,sw,sh,rgba(0,0,0,180));
-        panel({sw*.5f-260.f,sh*.5f-136.f,520,272},rgba(11,25,34,245));
-        text(font,"GAME PAUSED",sw*.5f-105,sh*.5f-87,30,rgba(235,237,220));
-        text(font,"ESC  RESUME     F11  TOGGLE FULLSCREEN",sw*.5f-194,sh*.5f-22,17,rgba(182,211,212));
-        text(font,"R  RESTART SESSION",sw*.5f-124,sh*.5f+30,17,rgba(182,211,212));
+        DrawRectangle(0,0,sw,sh,rgba(3,8,12,206));
+        centeredText(font,"BLACKWATER",cx,sh*.5f-160*scale,51*scale,bone);
+        centeredText(font,"PAUSED",cx,sh*.5f-77*scale,22*scale,teal);
+        DrawLineEx({cx-185*scale,sh*.5f-22*scale},{cx+185*scale,sh*.5f-22*scale},1.5f*scale,rgba(76,114,120));
+        centeredText(font,"ESC  RESUME GAME",cx,sh*.5f+14*scale,21*scale,bone);
+        centeredText(font,"R  RESTART     F11  FULLSCREEN",cx,sh*.5f+62*scale,16*scale,dim);
     }
-    if(w.caught||w.escaped){
-        DrawRectangle(0,0,sw,sh,rgba(0,0,0,185));
-        std::string headline=w.escaped?"YOU ESCAPED":"YOU WERE DETAINED";
-        text(font,headline,sw*.5f-200,sh*.5f-80,40,w.escaped?rgba(127,219,177):rgba(236,92,83));
-        text(font,"PRESS R TO START A NEW SESSION",sw*.5f-159,sh*.5f+15,18,rgba(234,234,217));
+    if(w.caught||w.escaped) {
+        DrawRectangle(0,0,sw,sh,rgba(3,7,10,218));
+        centeredText(font,w.escaped?"YOU MADE IT OUT":"YOU WERE DETAINED",cx,sh*.5f-80*scale,47*scale,w.escaped?teal:red);
+        centeredText(font,w.escaped?"BLACKWATER HAS LOST CONTROL":"OFFICER VOSS STOPPED YOUR ESCAPE",cx,sh*.5f+9*scale,17*scale,dim);
+        centeredText(font,"R  NEW ATTEMPT",cx,sh*.5f+71*scale,22*scale,bone);
     }
 }
 int main(){
@@ -387,12 +439,14 @@ int main(){
     AIService ai;
     AgentExecutor executor;
     float yaw=1.77f,pitch=0.f,worldTick=0.f,brainTick=0.f;
-    bool paused=false,chat=false,flashlight=true;
+    bool paused=false,chat=false,flashlight=true,controls=false,debug=false;
     std::string input;
     while(!WindowShouldClose()){
         float dt=std::min(.05f,GetFrameTime());
         int sw=GetScreenWidth(),sh=GetScreenHeight();
         if(IsKeyPressed(KEY_F11))ToggleFullscreen();
+        if(IsKeyPressed(KEY_F1))controls=!controls;
+        if(IsKeyPressed(KEY_F3))debug=!debug;
         if(IsKeyPressed(KEY_ESCAPE)){
             if(chat){chat=false;input.clear();DisableCursor();}
             else {paused=!paused;if(paused)EnableCursor();else DisableCursor();}
@@ -454,7 +508,7 @@ int main(){
             DrawSphere(impact,.075f,rgba(205,219,178,30));
         }
         EndMode3D();
-        overlay(w,ai,executor,font,chat,input,paused);
+        overlay(w,ai,executor,font,chat,input,paused,controls,debug,IsKeyDown(KEY_TAB));
         EndDrawing();
     }
     UnloadTexture(concrete);UnloadTexture(floor);UnloadTexture(steel);
