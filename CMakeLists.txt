@@ -16,6 +16,10 @@ target_link_libraries(AIPrisonBreak PRIVATE raylib prison_world nlohmann_json::n
 if(WIN32)
   target_link_libraries(AIPrisonBreak PRIVATE winhttp)
   set_target_properties(AIPrisonBreak PROPERTIES WIN32_EXECUTABLE TRUE)
+  if(MSVC)
+    # Native GUI subsystem while retaining the standard int main() entry point.
+    target_link_options(AIPrisonBreak PRIVATE "/ENTRY:mainCRTStartup")
+  endif()
 endif()
 enable_testing()
 add_executable(world_test tests/world_test.cpp)
