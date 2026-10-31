@@ -58,6 +58,26 @@ bool World::lineOfSight(Point a,Point b) const {
     for(int i=1;i<n;i++) {float t=(float)i/n; Point p={a.x+(b.x-a.x)*t,a.z+(b.z-a.z)*t};if(solid((int)std::floor(p.x),(int)std::floor(p.z))) return false;}
     return true;
 }
+
+bool World::visualLineOfSight(Point from,Point to) const {
+    const float len=distance(from,to);
+    const int n=std::max(1,(int)std::ceil(len/.07f));
+    for(int i=1;i<n;i++){
+        const float t=(float)i/n;
+        Point p={from.x+(to.x-from.x)*t,from.z+(to.z-from.z)*t};
+        int x=(int)std::floor(p.x),z=(int)std::floor(p.z);
+        if(!solid(x,z))continue;
+        const Door* door=doorAt(x,z);
+        if(door && !door->open && std::abs(p.z-(z+.5f))<.215f)continue;
+        return false;
+    }
+    return true;
+}
+void World::engagePlayer(){
+    if(distance(player.pos,guard.pos)>4.5f || !visualLineOfSight(guard.pos,player.pos))return;
+    guard.angle=std::atan2(player.pos.x-guard.pos.x,-(player.pos.z-guard.pos.z));
+    guard.moving=false;
+}
 void World::log(std::string message,Point at,float loudness) {
     events.push_back({elapsed,std::move(message),at,loudness});
     while(events.size()>40) events.pop_front();
@@ -135,7 +155,7 @@ Observation World::perceive() const {
     Observation o;Point p=player.pos;float dist=distance(guard.pos,p);
     float dx=std::sin(guard.angle),dz=-std::cos(guard.angle);
     float dot=(dx*(p.x-guard.pos.x)+dz*(p.z-guard.pos.z))/std::max(.001f,dist);
-    o.playerVisible=dist<.85f||(dist<(lights?9.f:4.5f) && dot>.24f && lineOfSight(guard.pos,p));
+    o.playerVisible=dist<.85f||(dist<(lights?9.f:4.5f) && dot>.24f && visualLineOfSight(guard.pos,p));
     o.playerAudible=noise>0 && dist<noise+1 && lineOfSight(guard.pos,p);
     o.playerLastKnown=lastKnown;
     for(const auto& d:doors)if(distance(guard.pos,{d.x+.5f,d.z+.5f})<10 && lineOfSight(guard.pos,{d.x+.5f,d.z+.5f}))
@@ -280,6 +300,32 @@ std::string World::observationJson() const {
     s<<"],\"reports\":[";for(size_t i=0;i<o.reports.size();i++){if(i)s<<",";s<<quoted(o.reports[i]);}
     s<<"],\"sounds\":[";for(size_t i=0;i<o.sounds.size();i++){if(i)s<<",";s<<quoted(o.sounds[i]);}
     s<<"]}";return s.str();
+}
+
+std::string World::conversationObservationJson() const {
+    std::string state=observationJson();
+    if(state.empty() || state.back()!='}')return state;
+    state.pop_back();
+    const float range=distance(player.pos,guard.pos);
+    const bool sight=visualLineOfSight(guard.pos,player.pos);
+    const bool physical=lineOfSight(guard.pos,player.pos);
+    const bool local=range<=4.5f && sight;
+    const std::string channel=local?(physical?"face_to_face":"door_window"):"facility_radio";
+    std::ostringstream ss;
+    ss<<state<<",\"conversationChannel\":"<<quoted(channel)
+      <<",\"prisonerVisibleAtConversation\":"<<(perceive().playerVisible?"true":"false")
+      <<",\"prisonerAtDoorWindow\":"<<(channel=="door_window"?"true":"false")
+      <<",\"nearbySpeaker\":"<<(local?"true":"false")
+      <<",\"distanceMetersIfObserved\":";
+    if(local)ss<<range;
+    else ss<<"null";
+    ss<<",\"verifiedFacilityCapabilities\":{"
+      <<"\"security_terminal\":\"CCTV toggling only\","
+      <<"\"identity_database\":false,"
+      <<"\"intercom_pad\":false,"
+      <<"\"officerCanVerifyIdentity\":false,"
+      <<"\"physicalDoorsBlockMovement\":true}}";
+    return ss.str();
 }
 std::string World::stateJson()const{
     std::ostringstream s;s<<"{\"time\":"<<elapsed<<",\"player\":{\"x\":"<<player.pos.x<<",\"z\":"<<player.pos.z
