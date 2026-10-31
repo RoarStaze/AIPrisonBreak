@@ -86,12 +86,13 @@ int main(){
         const auto j=json::parse(request);
         const auto text=j["messages"].back()["content"].get<std::string>();
         assert(text.find("door was blocked by the lockdown")!=std::string::npos);
-        assert(j["options"]["num_ctx"].get<int>()>=8192);
+        assert(j["options"]["num_ctx"].get<int>()==6144);
+        assert(j["think"]==false);
+        assert(j["keep_alive"]=="10m");
         assert(j["options"]["repeat_penalty"].get<double>()>1.0);
-        assert(j["model"]=="qwen3:8b");
+        assert(j["model"]=="qwen3.5:4b-q4_K_M");
         return json({{"message",{{"content",json({{"speech",""},{"actions",json::array()}}).dump()}}}}).dump();
     });
-    reflective.model="qwen3:8b";
     reflective.noteOutcome("Officer tried opening the security door; door was blocked by the lockdown");
     assert(reflective.requestPatrol(w));
     assert(pump(reflective,response));

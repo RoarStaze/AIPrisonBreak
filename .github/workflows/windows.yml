@@ -94,11 +94,15 @@ jobs:
             Remove-Item $modelPath -ErrorAction SilentlyContinue
             Write-Warning "Officer model unavailable: $($_.Exception.Message). Procedural fallback will remain."
           }
+      - name: Include one-model AI setup script
+        shell: pwsh
+        run: Copy-Item -Path SETUP-AI.ps1 -Destination build/Release/SETUP-AI.ps1 -Force
       - name: Upload native fullscreen Windows game
         uses: actions/upload-artifact@v4
         with:
           name: AIPrisonBreak-Windows-x64
           path: |
             build/Release/AIPrisonBreak.exe
+            build/Release/SETUP-AI.ps1
             build/Release/assets/
           if-no-files-found: error

@@ -43,11 +43,6 @@ static std::string httpPostLocal(const std::string& data) {
 }
 #endif
 AIService::AIService(Transport provided):transport(std::move(provided)) {
-    // Opt-in stronger models without breaking installations that have only 4B.
-    if(const char* candidate=std::getenv("AI_PRISON_MODEL")) {
-        std::string chosen(candidate);
-        if(!chosen.empty()&&chosen.size()<128)model=chosen;
-    }
     if(!transport)transport=[](const std::string& data){
 #ifdef _WIN32
         return httpPostLocal(data);
@@ -128,9 +123,11 @@ Your optional game-world commands: move, investigate, search, look (x,z), intera
     }
     return json({
         {"model",model},{"stream",false},{"format","json"},
-        {"options",{{"temperature",req.kind==ReplyKind::Conversation?0.48:0.24},
-                    {"num_ctx",8192},{"repeat_penalty",1.13},
-                    {"num_predict",req.kind==ReplyKind::Conversation?600:360}}},
+        {"think",false},
+        {"keep_alive","10m"},
+        {"options",{{"temperature",req.kind==ReplyKind::Conversation?0.42:0.22},
+                    {"num_ctx",6144},{"repeat_penalty",1.13},
+                    {"num_predict",req.kind==ReplyKind::Conversation?320:180}}},
         {"messages",messages}
     }).dump();
 }
@@ -159,7 +156,7 @@ std::optional<Reply> AIService::poll(){
             // One bounded retry; never spin indefinitely if the local model repeats.
             Request improved=active;
             improved.retryHint="The previous response was: "+turns.back().officer.substr(0,300)+
-                ". Answer the new prisoner message with different concrete, relevant information;"+
+                ". Please avoid repeating the earlier answer. Answer the new prisoner message with different concrete, relevant information;"+
                 " if the same rule applies, explain a different practical consequence or option.";
             launch(std::move(improved));
             return std::nullopt;

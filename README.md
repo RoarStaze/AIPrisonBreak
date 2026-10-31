@@ -91,15 +91,21 @@ Windows build artifacts include CC0 photographic wall, floor and metal textures 
 - Both main partition walls now connect to the outer perimeter at the last interior row. Locked doors cannot be bypassed around the end corners.
 - Regression tests cover map reachability, corner collision and door isolation.
 
-## Smarter Officer Voss (optional local AI model upgrade)
+## Officer Voss — single optimized AI model
 
-The native game defaults to `qwen3:4b-instruct`, preserving compatibility with older installations. For better reasoning, try the more capable but heavier `qwen3:8b` model from Ollama (about 5.2 GB of model weights, plus context and runtime memory):
+Officer Voss **always** uses **qwen3.5:4b-q4_K_M**, the fixed game default.
+This quantized 4B model is around 3.3 GB of weight data, selected for a laptop RTX 4050 6 GB GPU and 16 GB system memory. It balances modern instruction following with a realistic GPU memory budget. The larger 9B model is too large to confidently run fully on the 4050 alongside the game.
 
-```powershell
-ollama pull qwen3:8b
-[Environment]::SetEnvironmentVariable("AI_PRISON_MODEL", "qwen3:8b", "User")
-```
+Install or update the local model *once* using the bundled SETUP-AI.ps1 script or:
 
-**Restart the game** after changing the model. You can also set `$env:AI_PRISON_MODEL="qwen3:8b"` and launch the EXE from the same PowerShell session without persisting the choice. Depending on VRAM and context size, an 8B model may offload to system RAM and respond more slowly; you can revert by setting `qwen3:4b-instruct` again. Press F3 in-game to see the selected model and the Ollama status.
+\`\`\`powershell
+ollama pull qwen3.5:4b-q4_K_M
+\`\`\`
 
-Voss now keeps up to 24 dialogue exchanges, sends recent conversations to the model, records real action outcomes so it can revise plans, and makes one bounded regeneration attempt when he repeats an earlier response to a different question. The game continues to validate actions; language model output never bypasses the authoritative world simulation. AI dialogue quality and model response times still depend on your actual Ollama setup.
+Ollama for Windows must be installed and running. **There are no model-selection settings or optional stronger models.** The game requests \`think:false\`, structured JSON output, a bounded 6,144-token context and short responses to prioritize responsive real-time dialogue. The model stays warm between interactions.
+
+### Voss intelligence improvements
+
+Voss retains up to 24 exchanges locally and includes the latest 14 in each prompt. Recent verified actions (including failures) are fed back into subsequent plans; he does not get to invent successful actions. He detects near-identical replies to different player messages and retries once to give a more relevant answer. Patrol plans and dialogue share the same authoritative world state. Press F3 in-game for the model and Ollama status.
+
+The setup and scripted tests verify API payloads and mock responses; the selected model's actual speed, VRAM residency and dialogue quality still require benchmarking on your own laptop.

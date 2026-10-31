@@ -21,7 +21,7 @@ class AIService {
 public:
     using Transport=std::function<std::string(const std::string&)>;
     explicit AIService(Transport transport={});
-    std::string model="qwen3:4b-instruct";
+    std::string model="qwen3.5:4b-q4_K_M";
     std::string status="OLLAMA: READY";
     bool busy() const;
     bool hasPendingConversation() const;
