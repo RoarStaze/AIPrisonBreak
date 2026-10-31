@@ -76,6 +76,44 @@ static bool repeatsEarlierAnswer(const std::string& answer,const std::string& ea
     int biggest=static_cast<int>((std::max)(current.size(),previous.size()));
     return (float)common/(float)biggest>=.88f;
 }
+
+static std::string conflictWithObservedWorld(const std::string& speech,const std::string& observation) {
+    json fact;
+    try{fact=json::parse(observation);}catch(...){return {};}
+    std::string lower=speech;
+    std::transform(lower.begin(),lower.end(),lower.begin(),[](unsigned char x){return (char)std::tolower(x);});
+    auto mentions=[&](const char* words){return lower.find(words)!=std::string::npos;};
+    if(fact.value("prisonerVisible",false) &&
+       (mentions("cannot see you")||mentions("can't see you")||
+        mentions("don't see you")||mentions("cannot see your face")||
+        mentions("can't see your face")||mentions("only hear you"))) {
+        return "You actually SEE the prisoner at this location; never deny the current visible observation.";
+    }
+    const auto channel=fact.value("conversationChannel",std::string{});
+    if((mentions("intercom pad")||mentions("standing on the intercom")) ||
+       (channel!="facility_radio" && (mentions("through the intercom")||
+        mentions("over the intercom")))) {
+        return "No intercom pad exists; the prisoner is speaking "+channel+
+               ". Refer to nearby physical presence accurately.";
+    }
+    if(mentions("identity trace confirmed")||mentions("i've checked every log")||
+       mentions("i ran an identity trace")||mentions("i've run every access log")) {
+        return "No identity trace or facility identity database exists. Do not claim to have run one.";
+    }
+    return {};
+}
+static std::string safeGroundedAnswer(const std::string& observation,const std::string& violation) {
+    json fact;
+    try{fact=json::parse(observation);}catch(...){return "I need to verify what is happening before I answer."; }
+    if(violation.find("identity")!=std::string::npos)
+        return "I cannot verify your identity with the equipment available to me. What do you need?";
+    const auto channel=fact.value("conversationChannel",std::string{});
+    if(fact.value("prisonerVisible",false) && channel=="door_window")
+        return "I can see you through the security door's window. The locked door remains between us.";
+    if(fact.value("prisonerVisible",false))
+        return "Yes, I can see you here. I'm listening. What do you need?";
+    return "I can hear you over the facility radio, but I cannot see your current position.";
+}
 bool AIService::busy() const {
     return pending.valid() || !waiting.empty();
 }
@@ -150,6 +188,23 @@ std::optional<Reply> AIService::poll(){
         if(object.contains("speech")&&object["speech"].is_string())reply.speech=object["speech"].get<std::string>().substr(0,1200);
         if(reply.kind==ReplyKind::Conversation && reply.speech.empty())
             throw std::runtime_error("Model returned an empty conversational reply.");
+        if(reply.kind==ReplyKind::Conversation) {
+            const std::string conflict=conflictWithObservedWorld(reply.speech,active.observation);
+            if(!conflict.empty()) {
+                if(active.retryHint.empty()) {
+                    Request corrected=active;
+                    corrected.retryHint="CONTRADICTION with real game observations: "+conflict+
+                        " Your last speech was: "+reply.speech.substr(0,250)+
+                        ". Produce a new factually correct answer without made-up equipment or actions.";
+                    launch(std::move(corrected));
+                    return std::nullopt;
+                }
+                // If a second attempt still contradicts sensors, speak a minimal
+                // truthful response instead of displaying an impossible event.
+                reply.speech=safeGroundedAnswer(active.observation,conflict);
+                object["actions"]=json::array();
+            }
+        }
         if(reply.kind==ReplyKind::Conversation && active.retryHint.empty() && !turns.empty()
            && active.playerText!=turns.back().player
            && repeatsEarlierAnswer(reply.speech,turns.back().officer)) {
