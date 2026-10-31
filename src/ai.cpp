@@ -78,7 +78,7 @@ static bool repeatsEarlierAnswer(const std::string& answer,const std::string& ea
     if(current.empty()||previous.empty())return false;
     int common=0;
     for(const auto& word:current)if(previous.count(word))common++;
-    int biggest=static_cast<int>(std::max(current.size(),previous.size()));
+    int biggest=static_cast<int>((std::max)(current.size(),previous.size()));
     return (float)common/(float)biggest>=.88f;
 }
 bool AIService::busy() const {
