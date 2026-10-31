@@ -146,5 +146,22 @@ int main(){
     assert(grounded.submitMessage(near,"Can you see me?"));
     assert(pump(grounded,response));
     assert(response.speech.find("window")!=std::string::npos);
+    // Never deliver a model hallucination that contradicts direct sight.
+    int corrections=0;
+    AIService reliable([&](const std::string& request){
+        const auto j=json::parse(request);
+        const auto message=j["messages"].back()["content"].get<std::string>();
+        ++corrections;
+        if(corrections>1)assert(message.find("CONTRADICTION")!=std::string::npos);
+        const std::string speech=corrections==1?
+            "I cannot see you; I am standing on the intercom pad.":
+            "Yes, I see you through the door window. The cell door is still locked.";
+        return json({{"message",{{"content",json({{"speech",speech},{"actions",json::array()}}).dump()}}}}).dump();
+    });
+    assert(reliable.submitMessage(near,"Do you see me?"));
+    assert(pump(reliable,response));
+    assert(corrections==2);
+    assert(response.speech.find("I see you")!=std::string::npos);
+    assert(reliable.history().size()==1);
     std::cout<<"AI conversation priority, context, anti-repetition, action feedback and perception tests passed\n";
 }
