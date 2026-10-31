@@ -83,5 +83,34 @@ int main(){
     h.noise=7;
     h.update(1.f/60.f);
     assert(distance(h.guard.destination,h.player.pos)<.1f); // Hear and investigate while patrolling.
+    // Closed doors retain physical collision but their glass vision panels are transparent.
+    World glass;
+    glass.guard.pos={11.5f,6.5f};
+    glass.player.pos={9.5f,6.5f};
+    glass.guard.angle=-1.5707963f;
+    assert(!glass.lineOfSight(glass.guard.pos,glass.player.pos));
+    assert(glass.visualLineOfSight(glass.guard.pos,glass.player.pos));
+    assert(glass.perceive().playerVisible);
+    assert(glass.conversationObservationJson().find("\"conversationChannel\":\"door_window\"")!=std::string::npos);
+    assert(glass.conversationObservationJson().find("\"prisonerVisible\":true")!=std::string::npos);
+    glass.guard.angle=1.57f; // guard starts facing away but hears the prisoner at the window
+    glass.engagePlayer();
+    assert(glass.perceive().playerVisible);
+    // Not every part of a reinforced door is glass.
+    glass.guard.pos={11.5f,6.05f};
+    glass.player.pos={9.5f,6.05f};
+    assert(!glass.visualLineOfSight(glass.guard.pos,glass.player.pos));
+    assert(!glass.perceive().playerVisible);
+    // Facing a solid partition is not the same as looking through its viewport.
+    glass.player.pos={9.5f,9.5f};
+    glass.guard.pos={11.5f,9.5f};
+    assert(!glass.visualLineOfSight(glass.guard.pos,glass.player.pos));
+    auto remote=glass.conversationObservationJson();
+    assert(remote.find("\"conversationChannel\":\"facility_radio\"")!=std::string::npos);
+    // In-person conversation on the same side is not called a radio transmission.
+    glass.player.pos={12.5f,8.5f};
+    glass.guard.pos={13.5f,8.5f};
+    glass.engagePlayer();
+    assert(glass.conversationObservationJson().find("\"conversationChannel\":\"face_to_face\"")!=std::string::npos);
     std::cout<<"World and agent tests passed.\n";
 }

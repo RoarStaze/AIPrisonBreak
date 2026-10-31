@@ -130,5 +130,21 @@ int main(){
         assert(pump(memory,response));
     }
     assert(memory.history().size()>=12);
+    // Dialogue mode must describe the actual physical channel, not invent an intercom.
+    World near;
+    near.guard.pos={11.5f,6.5f};
+    near.player.pos={9.5f,6.5f};
+    near.guard.angle=-1.5707963f;
+    AIService grounded([&](const std::string& request){
+        auto payload=json::parse(request);
+        auto content=payload["messages"].back()["content"].get<std::string>();
+        assert(content.find("\"conversationChannel\":\"door_window\"")!=std::string::npos);
+        assert(content.find("\"prisonerVisible\":true")!=std::string::npos);
+        assert(content.find("always speak over the prison intercom")==std::string::npos);
+        return json({{"message",{{"content",json({{"speech","I can see you through the cell door window."},{"actions",json::array()}}).dump()}}}}).dump();
+    });
+    assert(grounded.submitMessage(near,"Can you see me?"));
+    assert(pump(grounded,response));
+    assert(response.speech.find("window")!=std::string::npos);
     std::cout<<"AI conversation priority, context, anti-repetition, action feedback and perception tests passed\n";
 }
