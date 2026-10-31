@@ -30,3 +30,7 @@ add_executable(agent_test tests/agent_test.cpp src/agent.cpp)
 target_include_directories(agent_test PRIVATE src)
 target_link_libraries(agent_test PRIVATE prison_world)
 add_test(NAME agent_test COMMAND agent_test)
+
+add_executable(presentation_test tests/presentation_test.cpp)
+target_include_directories(presentation_test PRIVATE src)
+add_test(NAME presentation_test COMMAND presentation_test)
