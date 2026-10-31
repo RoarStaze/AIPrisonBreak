@@ -130,7 +130,7 @@ static void setLighting(const World& world,Vector3 eye,Vector3 direction,bool fl
     SetShaderValue(gPrisonLight,GetShaderLocation(gPrisonLight,"flashOn"),&on,SHADER_UNIFORM_INT);
 }
 static void releaseLighting(){
-    if(gPrisonLight.id && gPrisonLight.id!=GetShaderDefault().id)UnloadShader(gPrisonLight);
+    if(gUseLighting)UnloadShader(gPrisonLight);
     if(gWhite.id)UnloadTexture(gWhite);
 }
 
