@@ -158,7 +158,7 @@ static void texturedBox(Texture2D texture,Vector3 pos,float sx,float sy,float sz
 // Optional high-detail CC0 institutional meshes from the matching prison kit.
 // All are drawn at authoring-scale (metres, Y up); load failure uses procedural props.
 struct ImportedProps {
-    Model bunk{},toilet{},camera{},desk{},fixture{};
+    Model bunk{},toilet{},camera{},desk{},fixture{},officer{};
 };
 static ImportedProps gProps{};
 static Model loadProp(const char* filename) {
@@ -177,9 +177,10 @@ static void initProps(){
     gProps.camera=loadProp("assets/models/cctv.glb");
     gProps.desk=loadProp("assets/models/control_desk.glb");
     gProps.fixture=loadProp("assets/models/ceiling_fixture.glb");
+    gProps.officer=loadProp("assets/models/officer.glb");
 }
 static void freeProps(){
-    for(Model *m:{&gProps.bunk,&gProps.toilet,&gProps.camera,&gProps.desk,&gProps.fixture})
+    for(Model *m:{&gProps.bunk,&gProps.toilet,&gProps.camera,&gProps.desk,&gProps.fixture,&gProps.officer})
         if(m->meshCount)UnloadModel(*m);
 }
 static bool drawProp(const Model& model,Vector3 p,float turn=0.f){
@@ -219,7 +220,13 @@ static void drawDoor(const Door& d,Texture2D steel){
         box(x+side*.62f,1.45f,z+.35f,.025f,.057f,.065f,access);
     }
 }
-static void drawGuard(Point p,float angle,float time,bool alert){
+static void drawGuard(Point p,float angle,float time,bool alert,bool walking){
+    if(gProps.officer.meshCount){
+        float bob=walking?0.014f*std::sin(time*10.f):0.f;
+        DrawModelEx(gProps.officer,v3(p.x,bob,p.z),v3(0,1,0),180.f-angle*RAD2DEG,v3(1,1,1),WHITE);
+        if(alert)warningLight(p.x,2.12f,p.z,time,rgba(238,65,49));
+        return;
+    }
     // Articulated rounded anthropomorphic placeholder; character can later be replaced by a rigged asset.
     Vector3 base=v3(p.x,0,p.z);
     float sway=std::sin(time*6.f)*.085f;
@@ -549,7 +556,7 @@ int main(){
         BeginMode3D(camera);
         setLighting(w,camera.position,dir,flashlight);
         worldGeometry(w,concrete,floor,steel,w.elapsed);
-        drawGuard(w.guard.pos,w.guard.angle,w.elapsed,w.alert>1);
+        drawGuard(w.guard.pos,w.guard.angle,w.elapsed,w.alert>1,w.guard.moving);
         if(flashlight){
             // Player-controlled flashlight glow / near-cone cue. Dynamic lighting material pass is future work.
             Vector3 impact=Vector3Add(camera.position,Vector3Scale(dir,3.3f));

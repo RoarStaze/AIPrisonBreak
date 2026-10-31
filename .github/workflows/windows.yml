@@ -81,6 +81,19 @@ jobs:
           name: AIPrisonBreak-render-smoke
           path: build/Release/AIPrisonBreak-preview.png
           if-no-files-found: warn
+      - name: Bundle CC0 life-scale police officer
+        shell: pwsh
+        run: |
+          $modelPath = "build/Release/assets/models/officer.glb"
+          $modelUrl = "https://files.innerscene.com/library/police-officer-standing-3d-person-emergency-services-9fd93114/5a54c44f2bfc5920ccd2/professional-police-officer.glb"
+          try {
+            Invoke-WebRequest -Uri $modelUrl -OutFile $modelPath -TimeoutSec 90 -ErrorAction Stop
+            if ((Get-Item $modelPath).Length -lt 1000000) { throw "Unusable GLB download" }
+            Write-Host "Bundled full-scale CC0 police officer model"
+          } catch {
+            Remove-Item $modelPath -ErrorAction SilentlyContinue
+            Write-Warning "Officer model unavailable: $($_.Exception.Message). Procedural fallback will remain."
+          }
       - name: Upload native fullscreen Windows game
         uses: actions/upload-artifact@v4
         with:

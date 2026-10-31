@@ -13,3 +13,7 @@ These textures are not a substitute for proper PBR shaders, high-fidelity models
 ## Additional CC0 3D geometry
 
 Five prison props are downloaded during GitHub Actions builds from the [Prison Complex Builder](https://3dassets.dev/packs/prison-complex-builder) pack at 3DAssets.dev (CC0 1.0 Universal). Selected models: cell bunk (asset 25595), toilet/sink combination (25597), CCTV camera (25643), control room desk (25646), and ceiling light bank (25615). Files use original metre units and are optional: failure to load a model uses procedural fallback geometry. The artwork is AI-generated, not hand-reviewed for final production realism.
+
+## Officer Voss - optional high-detail character
+
+The Windows CI workflow attempts to bundle **professional-police-officer.glb** from Innerscene's public-domain 3D Parts Library (adapted from MakeHuman CC0 figures). Source: https://www.innerscene.com/tools/library/3d-parts/police-officer-standing-3d-person-emergency-services-9fd93114 . This model is **static** (approximately 1.81 m tall, 123k triangles) and does not include skeletal animation. If its download or import fails, the procedural guard remains. Full walk/idle rigs and animation are separate development work.
