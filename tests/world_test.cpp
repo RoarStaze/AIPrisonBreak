@@ -4,12 +4,42 @@
 #endif
 #include <cassert>
 #include <iostream>
+#include <array>
+#include <queue>
 #include <string>
 using namespace prison;
+
+static bool reachable(const World& w,int sx,int sz,int tx,int tz) {
+    std::array<bool,World::width*World::height> visited{};
+    std::queue<std::pair<int,int>> open;
+    if(w.solid(sx,sz)||w.solid(tx,tz))return false;
+    open.push({sx,sz});visited[sz*World::width+sx]=true;
+    while(!open.empty()){
+        auto [x,z]=open.front();open.pop();
+        if(x==tx&&z==tz)return true;
+        for(auto [dx,dz]:std::array<std::pair<int,int>,4>{{
+            {1,0},{-1,0},{0,1},{0,-1}
+        }}){
+            int nx=x+dx,nz=z+dz;
+            if(nx<0||nz<0||nx>=World::width||nz>=World::height||
+               w.solid(nx,nz)||visited[nz*World::width+nx])continue;
+            visited[nz*World::width+nx]=true;open.push({nx,nz});
+        }
+    }
+    return false;
+}
 int main(){
     World w;
     assert(w.solid(0,0) && !w.solid(5,5));
     assert(w.solid(10,6));
+    // Both walls must join the perimeter. Closing doors must seal rooms completely.
+    assert(w.solid(10,World::height-2));
+    assert(w.solid(18,World::height-2));
+    assert(!reachable(w,5,5,14,5));
+    assert(!reachable(w,14,5,22,5));
+    // Tight corner collision also rejects diagonal slipping past the end.
+    assert(!w.canStand({10.45f,18.5f}));
+    assert(!w.canStand({18.45f,18.5f}));
     assert(!w.lineOfSight({5.5f,6.5f},{14.5f,6.5f}));
     assert(!w.command("dance").ok);
     assert(!w.command("interact","security_terminal").ok);
@@ -18,6 +48,7 @@ int main(){
     assert(w.command("unlock","cell_door").ok);
     assert(w.command("open","cell_door").ok);
     assert(!w.solid(10,6));
+    assert(reachable(w,5,5,14,5));
     assert(w.command("cameras","off").ok&&!w.cameras);
     assert(w.command("lights","off").ok&&!w.lights);
     assert(w.command("alarm","3").ok&&w.lockdown&&w.alert==3);
