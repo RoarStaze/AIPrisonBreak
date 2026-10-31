@@ -456,7 +456,7 @@ static void overlay(const World& w,const AIService& ai,const AgentExecutor& exec
             "E  /  INTERACT           T  /  TALK TO VOSS",
             "F  /  FLASHLIGHT         TAB  /  MAP",
             "ESC  /  PAUSE             F11  /  FULLSCREEN",
-            "F1  /  CLOSE HELP         F3  /  DIAGNOSTICS"
+            "F1  /  CLOSE HELP         F12  /  SCREENSHOT"
         };
         for(int i=0;i<6;i++)centeredText(font,lines[i],cx,sh*.5f-74*scale+i*36*scale,16*scale,dim);
     }
@@ -466,7 +466,7 @@ static void overlay(const World& w,const AIService& ai,const AgentExecutor& exec
         centeredText(font,"PAUSED",cx,sh*.5f-77*scale,22*scale,teal);
         DrawLineEx({cx-185*scale,sh*.5f-22*scale},{cx+185*scale,sh*.5f-22*scale},1.5f*scale,rgba(76,114,120));
         centeredText(font,"ESC  RESUME GAME",cx,sh*.5f+14*scale,21*scale,bone);
-        centeredText(font,"R  RESTART     F11  FULLSCREEN",cx,sh*.5f+62*scale,16*scale,dim);
+        centeredText(font,"R  RESTART   F11  FULLSCREEN   Q  EXIT",cx,sh*.5f+62*scale,16*scale,dim);
     }
     if(w.caught||w.escaped) {
         DrawRectangle(0,0,sw,sh,rgba(3,7,10,218));
@@ -480,7 +480,7 @@ int main(){
     SetConfigFlags(FLAG_MSAA_4X_HINT|FLAG_VSYNC_HINT|FLAG_BORDERLESS_WINDOWED_MODE);
     InitWindow(1600,900,"AI PRISON BREAK  |  BLACKWATER");
     SetExitKey(KEY_NULL);
-    SetTargetFPS(60);
+    SetTargetFPS(std::clamp(GetMonitorRefreshRate(GetCurrentMonitor()),60,240));
     DisableCursor();
     Font font=interfaceFont();
     initLighting();
@@ -492,16 +492,17 @@ int main(){
     AIService ai;
     AgentExecutor executor;
     float yaw=1.77f,pitch=0.f,worldTick=0.f,brainTick=0.f;
-    bool paused=false,chat=false,flashlight=true,controls=false,debug=false;
+    bool paused=false,chat=false,flashlight=true,controls=false,debug=false,quit=false;
     std::string input;
     const bool previewCapture=std::getenv("AI_PRISON_PREVIEW")!=nullptr;
     int captureFrames=0;
-    while(!WindowShouldClose()){
+    while(!WindowShouldClose()&&!quit){
         float dt=std::min(.05f,GetFrameTime());
         int sw=GetScreenWidth(),sh=GetScreenHeight();
         if(IsKeyPressed(KEY_F11))ToggleBorderlessWindowed();
         if(IsKeyPressed(KEY_F1))controls=!controls;
         if(IsKeyPressed(KEY_F3))debug=!debug;
+        if(paused&&IsKeyPressed(KEY_Q))quit=true;
         if(IsKeyPressed(KEY_ESCAPE)){
             if(chat){chat=false;input.clear();DisableCursor();}
             else {paused=!paused;if(paused)EnableCursor();else DisableCursor();}
@@ -510,7 +511,7 @@ int main(){
             w=World{};executor.clear();yaw=1.77f;pitch=0;worldTick=0;brainTick=0;
             paused=false;chat=false;input.clear();DisableCursor();
         }
-        if(!paused&&!w.caught&&!w.escaped){
+        if(!paused&&!controls&&!w.caught&&!w.escaped){
             if(IsKeyPressed(KEY_T)&&!chat){chat=true;EnableCursor();}
             if(chat){
                 for(int c=GetCharPressed();c!=0;c=GetCharPressed())if(c>=32&&c<=126&&input.size()<180)input.push_back((char)c);
@@ -565,6 +566,7 @@ int main(){
         EndMode3D();
         overlay(w,ai,executor,font,chat,input,paused,controls,debug,IsKeyDown(KEY_TAB));
         EndDrawing();
+        if(IsKeyPressed(KEY_F12)&&!previewCapture)TakeScreenshot("AIPrisonBreak-preview.png");
         if(previewCapture && ++captureFrames>=30){
             TakeScreenshot("AIPrisonBreak-preview.png");
             break;
