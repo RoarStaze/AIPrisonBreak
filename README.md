@@ -18,7 +18,7 @@ This application starts fullscreen at the native display resolution. **F11** tog
 Install [Ollama](https://ollama.com/download/windows), then in PowerShell:
 
 ```powershell
-ollama pull qwen3:4b-instruct
+ollama pull qwen3.5:4b-q4_K_M
 ```
 
 Ollama runs on your machine at `127.0.0.1:11434`. The game continues functioning with deterministic guard movement if Ollama is unavailable; advanced language-model decisions and conversation require the installed model. The repository never asks you to put API keys in source code.
@@ -102,7 +102,7 @@ Install or update the local model *once* using the bundled SETUP-AI.ps1 script o
 ollama pull qwen3.5:4b-q4_K_M
 \`\`\`
 
-Ollama for Windows must be installed and running. **There are no model-selection settings or optional stronger models.** The game requests \`think:false\`, structured JSON output, a bounded 6,144-token context and short responses to prioritize responsive real-time dialogue. The model stays warm between interactions.
+Ollama for Windows must be installed and running. **There are no model-selection settings or optional stronger models.** The game requests `think:false`, structured JSON output, a bounded 6,144-token context and short responses to prioritize responsive real-time dialogue. The model stays warm between interactions.
 
 ### Voss intelligence improvements
 
