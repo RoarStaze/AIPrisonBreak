@@ -1,6 +1,7 @@
 #include "world.hpp"
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <queue>
 #include <sstream>
 
@@ -187,20 +188,69 @@ ActionResult World::command(const std::string& action,const std::string& target,
     }
     return{false,"Unrecognized or unauthorized action."};
 }
-ActionResult World::playerInteract(){
+// Targeting is the same for HUD prompts and actual interaction: the
+// crosshair must point toward an item or doorway within physical reach.
+static bool inFront(Point origin,float yaw,Point target) {
+    float dx=target.x-origin.x, dz=target.z-origin.z;
+    float len=std::hypot(dx,dz);
+    return len<.35f || ((dx*std::sin(yaw)-dz*std::cos(yaw))/len)>.36f;
+}
+static std::string readableName(const std::string& id) {
+    std::string s=id;
+    for(char& c:s)if(c=='_')c=' ';
+    for(char& c:s)c=(char)std::toupper(static_cast<unsigned char>(c));
+    return s;
+}
+std::string World::interactionHint() const {
+    if(caught||escaped)return "";
+    float best=2.15f;
+    std::string result;
+    for(const auto& obj:objects){
+        if(obj.taken)continue;
+        float dist=distance(player.pos,obj.pos);
+        if(dist>2.05f||dist>=best||!inFront(player.pos,player.angle,obj.pos))continue;
+        if(!lineOfSight(player.pos,obj.pos))continue;
+        best=dist;
+        if(obj.kind=="item")result="E  TAKE "+readableName(obj.id);
+        else if(obj.id=="emergency_exit")result="E  ESCAPE";
+        else result="E  USE "+readableName(obj.id);
+    }
+    for(const auto& door:doors) {
+        Point p={door.x+.5f,door.z+.5f};
+        float dist=distance(player.pos,p);
+        if(dist>2.05f||dist>=best||!inFront(player.pos,player.angle,p))continue;
+        best=dist;
+        result=door.locked?"E  UNLOCK "+readableName(door.id):
+            (door.open?"E  CLOSE ":"E  OPEN ")+readableName(door.id);
+    }
+    return result;
+}
+ActionResult World::playerInteract() {
     if(caught||escaped)return{false,"Game ended."};
-    for(auto& obj:objects)if(!obj.taken&&distance(player.pos,obj.pos)<1.8f) {
+    std::string prompt=interactionHint();
+    if(prompt.empty())return{false,"Look directly at an item or door to interact."};
+    // Select by the exact prompt that the player sees.
+    for(auto& obj:objects){
+        if(obj.taken||prompt.find(readableName(obj.id))==std::string::npos)continue;
         if(obj.id=="hairpin"){hasHairpin=true;obj.taken=true;status="HAIRPIN ACQUIRED";return{true,"You found a hairpin."};}
         if(obj.id=="keycard"){hasCard=true;obj.taken=true;status="KEYCARD ACQUIRED";return{true,"Security keycard acquired."};}
-        if(obj.id=="security_terminal"){cameras=false;alert=std::max(alert,2);log("Security terminal breached.",obj.pos,8);return{true,"CCTV temporarily disabled."};}
+        if(obj.id=="security_terminal"){cameras=false;alert=std::max(alert,2);log("Security terminal breached.",obj.pos,8);return{true,"CCTV disabled."};}
         if(obj.id=="generator"){lights=false;log("Power shutdown.",obj.pos,8);return{true,"Power cut."};}
-        if(obj.id=="emergency_exit"&&doorAt(26,16)->open){escaped=true;status="YOU ESCAPED BLACKWATER";return{true,"Freedom."};}
+        if(obj.id=="emergency_exit"){
+            if(doorAt(26,16)->open){escaped=true;status="YOU ESCAPED BLACKWATER";return{true,"Freedom."};}
+            return {false,"Unlock the exit gate first."};
+        }
     }
-    for(auto& d:doors)if(distance(player.pos,{d.x+.5f,d.z+.5f})<2.f) {
-        if(d.locked){if(d.card&&!hasCard)return{false,"Requires security keycard."};
-            if(!d.card&&!hasHairpin)return{false,"Find something to pick the lock."};
-            d.locked=false;log("Lock tampered: "+d.id,player.pos,4);}
-        d.open=!d.open;status=d.open?"DOOR OPENED":"DOOR CLOSED";return{true,status};
+    for(auto& door:doors){
+        if(prompt.find(readableName(door.id))==std::string::npos)continue;
+        if(door.locked){
+            if(door.card&&!hasCard)return{false,"Security keycard required."};
+            if(!door.card&&!hasHairpin)return{false,"Find something to pick this lock."};
+            door.locked=false;log("Lock tampered: "+door.id,player.pos,4);
+        }
+        door.open=!door.open;
+        status=door.open?"DOOR OPENED":"DOOR CLOSED";
+        return{true,status};
     }
     return{false,"Nothing within reach."};
 }

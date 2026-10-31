@@ -38,6 +38,10 @@ int main(){
     p.player.pos={4.5f,4.5f};
     assert(p.playerInteract().ok&&p.hasHairpin);
     p.player.pos={9.3f,6.5f};
+    p.player.angle=-1.5707963f;
+    assert(p.interactionHint().empty()); // Behind the player must not interact
+    p.player.angle=1.5707963f;
+    assert(p.interactionHint().find("CELL DOOR")!=std::string::npos);
     assert(p.playerInteract().ok&&!p.solid(10,6));
     World h;
     h.guard.pos={6.5f,5.5f};

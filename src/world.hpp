@@ -41,6 +41,7 @@ public:
     void update(float dt);
     Observation perceive() const;
     ActionResult command(const std::string& action,const std::string& target="",Point at={});
+    std::string interactionHint() const;
     ActionResult playerInteract();
     std::string observationJson() const;
     std::string stateJson() const;
