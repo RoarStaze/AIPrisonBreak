@@ -8,10 +8,10 @@ The game is being developed entirely in this GitHub repository. GitHub Actions b
 
 1. Open the **Actions** tab in this repository.
 2. Select **Windows game build** and open the newest **successful** run.
-3. Download **AIPrisonBreak-Windows-x64** from the run's Artifacts section.
-4. Extract the ZIP and double-click **AIPrisonBreak.exe**.
+3. Download **AIPrisonBreak** from the run's Artifacts section.
+4. For regular updates, use the in-place updater below instead of downloading another ZIP.
 
-This application starts fullscreen at the native display resolution. **F11** toggles fullscreen. No web browser is involved.
+This application starts maximized with native Windows controls. **F11** toggles borderless fullscreen. No web browser is involved.
 
 ### Optional local AI (recommended)
 
@@ -22,6 +22,27 @@ ollama pull qwen3.5:4b-q4_K_M
 ```
 
 Ollama runs on your machine at `127.0.0.1:11434`. The game continues functioning with deterministic guard movement if Ollama is unavailable; advanced language-model decisions and conversation require the installed model. The repository never asks you to put API keys in source code.
+
+## Install once, update in place
+
+The GitHub Actions artifact is named **AIPrisonBreak** (downloaded manually as **AIPrisonBreak.zip**). You do not need to save or extract successive ZIP files for updates.
+
+Install Git and GitHub CLI (`gh`), sign in with `gh auth login`, and make a local Git clone once:
+
+    git clone https://github.com/RoarStaze/AIPrisonBreak.git "$HOME\Desktop\AIPrisonBreak-Repo"
+    cd "$HOME\Desktop\AIPrisonBreak-Repo"
+    pwsh -NoProfile -ExecutionPolicy Bypass -File .\UPDATE.ps1 -Launch
+
+Every subsequent update uses the same two commands:
+
+    cd "$HOME\Desktop\AIPrisonBreak-Repo"
+    pwsh -NoProfile -ExecutionPolicy Bypass -File .\UPDATE.ps1 -Launch
+
+The script fast-forwards the source using `git pull --ff-only origin main`, selects the **successful Windows build for the exact checked-out Git commit**, downloads the compiled game into a temporary directory, and replaces files in `build/Release`. The temporary directory is removed after the update. The fixed executable location is `build/Release/AIPrisonBreak.exe`.
+
+Close the game before updating. If the newest source revision has no successful build, the script stops with a clear message instead of running an outdated binary. Your uncommitted source edits are not discarded.
+
+Use an already cloned repository instead if you have one. The `AIPrisonBreak-Repo` name is just a safe one-time default that does not overwrite previous non-Git game folders.
 
 ## Controls
 
