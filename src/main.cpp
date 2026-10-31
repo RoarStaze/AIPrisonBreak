@@ -42,6 +42,13 @@ static void warningLight(float x,float y,float z,float seconds,Color color){
     DrawSphere(v3(x,y,z),.12f,flashing?color:rgba(54,27,24));
     DrawSphereWires(v3(x,y,z),.145f,6,6,rgba(123,130,128));
 }
+// Reusable textured mesh replaces raylib example-only DrawCubeTexture helper.
+static Model gSurfaceCube{};
+static void texturedBox(Texture2D texture,Vector3 pos,float sx,float sy,float sz,Color tint){
+    if(gSurfaceCube.meshCount==0)gSurfaceCube=LoadModelFromMesh(GenMeshCube(1,1,1));
+    gSurfaceCube.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture=texture;
+    DrawModelEx(gSurfaceCube,pos,v3(0,1,0),0,v3(sx,sy,sz),tint);
+}
 static void drawDoor(const Door& d){
     float z=d.z+.5f,x=d.x+.5f;
     if(d.open){
@@ -91,7 +98,7 @@ static void worldGeometry(const World& w,Texture2D concrete,Texture2D steel,floa
     // Deliberate material variation, surface detailing and repeated environmental storytelling.
     for(int z=1;z<World::height-1;z++)for(int x=1;x<World::width-1;x++){
         Color tint=((x+z)%4==0)?rgba(177,187,184):rgba(151,161,161);
-        DrawCubeTexture(concrete,v3(x+.5f,-.09f,z+.5f),1,.16f,1,tint);
+        texturedBox(concrete,v3(x+.5f,-.09f,z+.5f),1,.16f,1,tint);
         if((x+z*3)%5==0)box(x+.5f,-.002f,z+.5f,.02f,.003f,.72f,rgba(45,53,57,130));
     }
     for(int z=0;z<World::height;z++)for(int x=0;x<World::width;x++) {
@@ -100,7 +107,7 @@ static void worldGeometry(const World& w,Texture2D concrete,Texture2D steel,floa
         if(d)continue;
         bool exposed=!w.solid(x+1,z)||!w.solid(x-1,z)||!w.solid(x,z+1)||!w.solid(x,z-1);
         if(!exposed)continue;
-        DrawCubeTexture(concrete,v3(x+.5f,1.57f,z+.5f),1,3.16f,1,rgba(134,145,146));
+        texturedBox(concrete,v3(x+.5f,1.57f,z+.5f),1,3.16f,1,rgba(134,145,146));
         box(x+.5f,.18f,z+.5f,1,.36f,1,rgba(38,47,52));
         box(x+.5f,3.04f,z+.5f,1,.24f,1,rgba(51,63,68));
         if((z+x*2)%3==0)box(x+.5f,1.6f,z+.5f,.012f,2.2f,.025f,rgba(39,46,51,95));
