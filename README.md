@@ -90,3 +90,16 @@ Windows build artifacts include CC0 photographic wall, floor and metal textures 
 - Esc pauses and frees the mouse so the native maximize button can be clicked.
 - Both main partition walls now connect to the outer perimeter at the last interior row. Locked doors cannot be bypassed around the end corners.
 - Regression tests cover map reachability, corner collision and door isolation.
+
+## Smarter Officer Voss (optional local AI model upgrade)
+
+The native game defaults to `qwen3:4b-instruct`, preserving compatibility with older installations. For better reasoning, try the more capable but heavier `qwen3:8b` model from Ollama (about 5.2 GB of model weights, plus context and runtime memory):
+
+```powershell
+ollama pull qwen3:8b
+[Environment]::SetEnvironmentVariable("AI_PRISON_MODEL", "qwen3:8b", "User")
+```
+
+**Restart the game** after changing the model. You can also set `$env:AI_PRISON_MODEL="qwen3:8b"` and launch the EXE from the same PowerShell session without persisting the choice. Depending on VRAM and context size, an 8B model may offload to system RAM and respond more slowly; you can revert by setting `qwen3:4b-instruct` again. Press F3 in-game to see the selected model and the Ollama status.
+
+Voss now keeps up to 24 dialogue exchanges, sends recent conversations to the model, records real action outcomes so it can revise plans, and makes one bounded regeneration attempt when he repeats an earlier response to a different question. The game continues to validate actions; language model output never bypasses the authoritative world simulation. AI dialogue quality and model response times still depend on your actual Ollama setup.

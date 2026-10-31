@@ -528,9 +528,9 @@ static void overlay(const World& w,const AIService& ai,const AgentExecutor& exec
     if(showMap&&!pause&&!chat)minimap(w,sw,sh);
     if(debug&&!pause){
         panel({sw-380*scale,112*scale,344*scale,98*scale},rgba(9,19,26,213));
-        text(font,ai.status.substr(0,34),sw-363*scale,125*scale,15*scale,teal);
-        text(font,executor.description().substr(0,32),sw-363*scale,153*scale,13*scale,dim);
-        text(font,"FPS "+std::to_string(GetFPS()),sw-363*scale,179*scale,12*scale,dim);
+        text(font,("MODEL: "+ai.model).substr(0,34),sw-363*scale,125*scale,13*scale,teal);
+        text(font,ai.status.substr(0,34),sw-363*scale,153*scale,13*scale,dim);
+        text(font,executor.description().substr(0,34)+" | FPS "+std::to_string(GetFPS()),sw-363*scale,179*scale,12*scale,dim);
     }
     if(controls&&!pause&&!chat){
         panel({sw*.5f-350*scale,sh*.5f-170*scale,700*scale,340*scale},rgba(5,18,23,244));
@@ -578,6 +578,7 @@ int main(){
     World w;
     AIService ai;
     AgentExecutor executor;
+    std::string lastRememberedOutcome;
     float yaw=1.77f,pitch=0.f,worldTick=0.f,brainTick=0.f;
     bool paused=false,chat=false,flashlight=true,controls=false,debug=false,quit=false;
     bool borderlessFullscreen=false;
@@ -613,7 +614,7 @@ int main(){
             else {paused=!paused;if(paused)EnableCursor();else DisableCursor();}
         }
         if(IsKeyPressed(KEY_R)&&(paused||w.caught||w.escaped)){
-            w=World{};executor.clear();yaw=1.77f;pitch=0;worldTick=0;brainTick=0;
+            w=World{};executor.clear();lastRememberedOutcome.clear();yaw=1.77f;pitch=0;worldTick=0;brainTick=0;
             paused=false;chat=false;chatScroll=0;input.clear();DisableCursor();
         }
         if(!paused&&!controls&&!w.caught&&!w.escaped){
@@ -656,6 +657,14 @@ int main(){
             }
             w.update(dt);
             executor.tick(w,dt);
+            const auto& completed=executor.lastEvent;
+            if(completed!=lastRememberedOutcome &&
+               (completed.rfind("Completed ",0)==0 ||
+                completed.rfind("Rejected ",0)==0 ||
+                completed.rfind("Could not reach ",0)==0)) {
+                ai.noteOutcome(completed);
+                lastRememberedOutcome=completed;
+            }
             brainTick+=dt;
             if(brainTick>8.0f&&!ai.busy()&&!ai.hasPendingConversation()&&!chat&&!executor.active()){ai.requestPatrol(w);brainTick=0;}
         }

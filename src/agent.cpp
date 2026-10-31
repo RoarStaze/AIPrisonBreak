@@ -18,26 +18,38 @@ std::string AgentExecutor::description() const {
         " ("+std::to_string(pending.size())+" steps)";
 }
 void AgentExecutor::tick(World& world,float dt){
-    if(!active()||world.caught||world.escaped){if(world.caught||world.escaped)clear();return;}
+    if(!active()||world.caught||world.escaped){
+        if(world.caught||world.escaped)clear();
+        return;
+    }
     for(int n=0;n<3 && active();n++) {
         Decision& step=pending.front();
-        bool travel=step.action=="move"||step.action=="investigate"||step.action=="search";
+        const bool travel=step.action=="move"||step.action=="investigate"||step.action=="search";
+        const std::string description=step.action+
+            (step.target.empty()?std::string{}:" "+step.target);
+        std::string reportedSuccess;
         if(!issued){
-            ActionResult result=world.command(step.action,step.target,step.at);
+            const ActionResult result=world.command(step.action,step.target,step.at);
             if(!result.ok){
-                lastEvent="Rejected "+step.action+": "+result.text;
-                world.log("Agent step failed: "+step.action,world.guard.pos);
+                lastEvent="Rejected "+description+": "+result.text;
+                world.log("Officer action result: "+lastEvent,world.guard.pos);
                 pending.pop_front();duration=0;issued=false;
                 continue;
             }
             issued=true;duration=0;
-            lastEvent="Executing "+step.action;
+            reportedSuccess=result.text;
+            lastEvent="Executing "+description;
         }
-        if(travel){
+        if(travel) {
             duration+=std::clamp(dt,0.f,.1f);
-            if(distance(world.guard.pos,step.at)>.72f && duration<28.f)return;
-            if(duration>=28.f)lastEvent="Navigation timed out: "+step.action;
-        }
+            const bool reached=distance(world.guard.pos,step.at)<=.72f;
+            if(!reached && duration<28.f)return;
+            if(!reached) lastEvent="Could not reach "+description+"; route obstructed or interrupted";
+            else lastEvent="Completed "+description+"; arrived at destination";
+        }else lastEvent="Completed "+description+
+            (reportedSuccess.empty()?std::string{}:": "+reportedSuccess);
+        // Only actual outcomes enter memory. "Executing" is never recorded as success.
+        world.log("Officer action result: "+lastEvent,world.guard.pos);
         pending.pop_front();issued=false;duration=0;
     }
 }
