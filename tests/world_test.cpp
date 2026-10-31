@@ -25,10 +25,25 @@ int main(){
     assert(w.guard.pos.z>9.5f);
     assert(w.observationJson().find("prisonerVisible")!=std::string::npos);
     assert(w.observationJson().find("security_door")!=std::string::npos);
+    // The AI receives navigable facility coordinates but not unseen hidden items.
+    const auto snapshot=w.observationJson();
+    assert(snapshot.find("\"facilityObjects\"")!=std::string::npos);
+    assert(snapshot.find("\"security_terminal\"")!=std::string::npos);
+    assert(snapshot.find("\"x\":21.5")!=std::string::npos);
+    assert(snapshot.find("\"hairpin\"")==std::string::npos);
     World p;
     p.player.pos={4.5f,4.5f};
     assert(p.playerInteract().ok&&p.hasHairpin);
     p.player.pos={9.3f,6.5f};
     assert(p.playerInteract().ok&&!p.solid(10,6));
+    World h;
+    h.guard.pos={6.5f,5.5f};
+    h.guard.destination={6.5f,14.5f};
+    h.guard.angle=0;
+    h.guard.moving=true;
+    h.player.pos={7.8f,5.5f};
+    h.noise=7;
+    h.update(1.f/60.f);
+    assert(distance(h.guard.destination,h.player.pos)<.1f); // Hear and investigate while patrolling.
     std::cout<<"World and agent tests passed.\n";
 }
