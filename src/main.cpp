@@ -3,6 +3,7 @@
 #include "world.hpp"
 #include "ai.hpp"
 #include "agent.hpp"
+#include "chat_text.hpp"
 #include "presentation_math.hpp"
 #include <algorithm>
 #include <array>
@@ -381,8 +382,82 @@ static void centeredText(Font font,const std::string& caption,float center,float
     Vector2 bounds=MeasureTextEx(font,caption.c_str(),size,1.1f);
     text(font,caption,center-bounds.x*.5f,y,size,color);
 }
+static std::vector<std::string> wrapForFont(Font font,const std::string& message,float width,float size){
+    return wrapChatText(message,std::max(12.f,width),[&](const std::string& part){
+        return MeasureTextEx(font,part.c_str(),size,1.1f).x;
+    });
+}
+static void drawIntercom(Font font,const AIService& ai,const std::string& input,int scroll){
+    int sw=GetScreenWidth(),sh=GetScreenHeight();
+    float scale=std::clamp(std::min(sw/1600.f,sh/900.f),.78f,1.35f);
+    Color bone=rgba(235,240,238),dim=rgba(187,203,210),teal=rgba(132,224,206);
+    // Dim the scene AND give the full transcript its own almost-opaque surface.
+    DrawRectangle(0,0,sw,sh,rgba(2,7,12,160));
+    Rectangle frame={std::max(18.f,sw*.09f),std::max(25.f,sh*.105f),
+                     std::min(sw-36.f,sw*.82f),std::min(sh-48.f,sh*.78f)};
+    panel(frame,rgba(6,16,24,251));
+    DrawRectangle(frame.x+3.f,frame.y+3.f,4.f,frame.height-6.f,teal);
+    float pad=24.f*scale;
+    text(font,"BLACKWATER  /  SECURE INTERCOM",frame.x+pad,frame.y+15.f*scale,18.f*scale,teal);
+    text(font,"OFFICER VOSS   |   LIVE TRANSCRIPT",frame.x+pad,frame.y+44.f*scale,14.f*scale,dim);
+    float logTop=frame.y+78.f*scale,logBottom=frame.y+frame.height-155.f*scale;
+    float logHeight=std::max(90.f,logBottom-logTop);
+    Rectangle inputBox={frame.x+pad,frame.y+frame.height-139.f*scale,frame.width-pad*2,112.f*scale};
+    struct Entry {
+        const char* role;
+        Color color;
+        std::vector<std::string> lines;
+        float height;
+    };
+    std::vector<Entry> entries;
+    float bodySize=17.f*scale;
+    float lineHeight=24.f*scale;
+    const float bodyWidth=frame.width-pad*2-123.f*scale;
+    for(const auto& turn:ai.history()){
+        for(int role=0;role<2;role++){
+            const std::string& value=role==0?turn.player:turn.officer;
+            Entry item{role==0?"YOU":"VOSS",role==0?teal:bone,
+                       wrapForFont(font,value,bodyWidth,bodySize),0};
+            item.height=std::max(1,(int)item.lines.size())*lineHeight+13.f*scale;
+            entries.push_back(std::move(item));
+        }
+    }
+    float contentHeight=0.f;
+    for(const auto& entry:entries)contentHeight+=entry.height;
+    const float maxOffset=std::max(0.f,contentHeight-logHeight+12.f*scale);
+    const float offset=std::clamp((float)scroll*43.f*scale,0.f,maxOffset);
+    float y=contentHeight<=logHeight?logTop+5.f*scale:logBottom-contentHeight+offset-5.f*scale;
+    // Clip the history to its viewport. PageUp/PageDown and wheel scroll older messages.
+    BeginScissorMode((int)(frame.x+pad),(int)logTop,(int)(frame.width-2*pad),(int)logHeight);
+    if(entries.empty())text(font,"NO TRANSMISSIONS YET. ASK VOSS ANYTHING.",frame.x+pad+10.f,logTop+23.f*scale,16.f*scale,dim);
+    for(const auto& entry:entries){
+        if(y+entry.height>=logTop && y<=logBottom){
+            DrawRectangle((int)(frame.x+pad+8.f*scale),(int)y,3,(int)(entry.height-5*scale),
+                          entry.role[0]=='V'?rgba(98,132,149):rgba(55,142,126));
+            text(font,entry.role,frame.x+pad+20.f*scale,y+2.f*scale,14.f*scale,entry.color);
+            float bodyX=frame.x+pad+97.f*scale;
+            for(size_t i=0;i<entry.lines.size();i++)
+                text(font,entry.lines[i],bodyX,y+(float)i*lineHeight,bodySize,bone);
+        }
+        y+=entry.height;
+    }
+    EndScissorMode();
+    if(contentHeight>logHeight+2.f*scale)
+        text(font,"MOUSE WHEEL / PAGE UP-DOWN TO SCROLL",
+             frame.x+pad+8.f*scale,logBottom+3*scale,12.f*scale,dim);
+    panel(inputBox,rgba(17,35,43,250));
+    text(font,"YOUR TRANSMISSION",inputBox.x+13.f*scale,inputBox.y+10.f*scale,13.f*scale,teal);
+    auto inputLines=wrapForFont(font,"> "+input+"_",inputBox.width-27.f*scale,19.f*scale);
+    const float inHeight=23.f*scale;
+    // Input cap is 180 chars, but handle narrow windows safely by showing newest lines.
+    const int count=std::min<int>((int)inputLines.size(),3);
+    for(int i=0;i<count;i++)
+        text(font,inputLines[inputLines.size()-count+i],inputBox.x+13.f*scale,
+             inputBox.y+36.f*scale+i*inHeight,19.f*scale,bone);
+    text(font,"ENTER  SEND    ESC  CANCEL",frame.x+pad,frame.y+frame.height-17.f*scale,12.f*scale,dim);
+}
 static void overlay(const World& w,const AIService& ai,const AgentExecutor& executor,
-                    Font font,bool chat,const std::string& input,bool pause,bool controls,bool debug,bool showMap){
+                    Font font,bool chat,const std::string& input,bool pause,bool controls,bool debug,bool showMap,int chatScroll){
     int sw=GetScreenWidth(),sh=GetScreenHeight();
     float scale=std::clamp(std::min(sw/1600.f,sh/900.f),.80f,1.40f);
     float left=36*scale,top=26*scale;
@@ -424,30 +499,29 @@ static void overlay(const World& w,const AIService& ai,const AgentExecutor& exec
         centeredText(font,"WASD  MOVE     E  INTERACT     T  SPEAK     F1  CONTROLS",cx,sh-32*scale,12*scale,dim);
     }
 
-    // Dialogue appears inside the world view, not an HTML textbox.
-    if(chat){
-        float pw=std::min(sw-50*scale,920*scale), px=(sw-pw)*.5f;
-        Rectangle dialog={px,sh-335*scale,pw,164*scale};
-        panel(dialog,rgba(4,15,20,245));
-        DrawRectangle(px,dialog.y,3*scale,dialog.height,teal);
-        text(font,"OFFICER VOSS  /  TWO-WAY PRISON INTERCOM",px+24*scale,dialog.y+20*scale,16*scale,teal);
-        // Show the last real exchange above the input, not a simulated canned line.
-        const auto& turns=ai.history();
-        if(!turns.empty()) {
-            const auto& prior=turns.back();
-            text(font,"YOU: "+prior.player.substr(0,78),px+24*scale,dialog.y-58*scale,15*scale,dim);
-            text(font,"VOSS: "+prior.officer.substr(0,78),px+24*scale,dialog.y-29*scale,15*scale,bone);
-        }
-        text(font,"> "+input+"_",px+24*scale,dialog.y+62*scale,21*scale,bone);
-        text(font,"ENTER  SEND     ESC  CANCEL",px+24*scale,dialog.y+126*scale,13*scale,dim);
-    } else if((ai.hasPendingConversation() || !w.guardSpeech.empty() || w.status.rfind("VOSS RADIO ERROR:",0)==0)&&!pause) {
-        float wmsg=std::min(sw*.64f,860.f*scale);
-        Rectangle r={(sw-wmsg)*.5f,sh-217*scale,wmsg,51*scale};
-        panel(r,rgba(5,16,21,216));
-        const bool hasError=w.status.rfind("VOSS RADIO ERROR:",0)==0;
-        const std::string line=ai.hasPendingConversation()?"INTERCOM   Officer Voss is processing your message...":
-            hasError ? w.status.substr(0,110) : "VOSS   "+w.guardSpeech.substr(0,110);
-        centeredText(font,line,sw*.5f,r.y+13*scale,16*scale,bone);
+    // Full-width wrapping prevents replies from being cut at 110 characters.
+    // The transcript remains accessible through T, even on a smaller monitor.
+    if(chat) {
+        drawIntercom(font,ai,input,chatScroll);
+    } else if((ai.hasPendingConversation() || !w.guardSpeech.empty() ||
+               w.status.rfind("VOSS RADIO ERROR:",0)==0)&&!pause) {
+        float maxWidth=std::min(sw-48.f*scale,1130.f*scale);
+        float px=(sw-maxWidth)*.5f;
+        bool error=w.status.rfind("VOSS RADIO ERROR:",0)==0;
+        const std::string fullMessage=ai.hasPendingConversation()?
+            "OFFICER VOSS IS PROCESSING YOUR MESSAGE...":
+            error?w.status:"VOSS:  "+w.guardSpeech;
+        float fontSize=17.f*scale,lineHeight=25.f*scale;
+        auto lines=wrapForFont(font,fullMessage,maxWidth-45.f*scale,fontSize);
+        float height=22.f*scale+(float)lines.size()*lineHeight;
+        float bottom=sh-177.f*scale;
+        Rectangle subtitle={px,bottom-height,maxWidth,height};
+        panel(subtitle,rgba(5,17,23,241));
+        DrawRectangle((int)(px+3.f*scale),(int)(subtitle.y+7.f*scale),
+                      std::max(2,(int)(3*scale)),(int)(height-14.f*scale),error?red:teal);
+        for(size_t line=0;line<lines.size();line++)
+            text(font,lines[line],px+20.f*scale,subtitle.y+10.f*scale+(float)line*lineHeight,
+                 fontSize,error?red:bone);
     }
 
     if(showMap&&!pause&&!chat)minimap(w,sw,sh);
@@ -508,6 +582,7 @@ int main(){
     bool borderlessFullscreen=false;
     bool restoreMaximized=true;
     std::string input;
+    int chatScroll=0;
     const bool previewCapture=std::getenv("AI_PRISON_PREVIEW")!=nullptr;
     int captureFrames=0;
     while(!WindowShouldClose()&&!quit){
@@ -533,17 +608,30 @@ int main(){
         if(IsKeyPressed(KEY_F3))debug=!debug;
         if(paused&&IsKeyPressed(KEY_Q))quit=true;
         if(IsKeyPressed(KEY_ESCAPE)){
-            if(chat){chat=false;input.clear();DisableCursor();}
+            if(chat){chat=false;chatScroll=0;input.clear();DisableCursor();}
             else {paused=!paused;if(paused)EnableCursor();else DisableCursor();}
         }
         if(IsKeyPressed(KEY_R)&&(paused||w.caught||w.escaped)){
             w=World{};executor.clear();yaw=1.77f;pitch=0;worldTick=0;brainTick=0;
-            paused=false;chat=false;input.clear();DisableCursor();
+            paused=false;chat=false;chatScroll=0;input.clear();DisableCursor();
         }
         if(!paused&&!controls&&!w.caught&&!w.escaped){
-            if(IsKeyPressed(KEY_T)&&!chat){chat=true;EnableCursor();}
+            bool openedChatThisFrame=false;
+            if(IsKeyPressed(KEY_T)&&!chat){
+                chat=true;input.clear();chatScroll=0;
+                openedChatThisFrame=true;EnableCursor();
+            }
             if(chat){
-                for(int c=GetCharPressed();c!=0;c=GetCharPressed())if(c>=32&&c<=126&&input.size()<180)input.push_back((char)c);
+                // Raylib queues T both as a hotkey and as a typed character.
+                // Drain and ignore opening-frame characters to prevent "> t_".
+                std::vector<int> typed;
+                for(int c=GetCharPressed();c!=0;c=GetCharPressed())typed.push_back(c);
+                appendChatInput(input,typed,openedChatThisFrame,180);
+                const float scrollWheel=GetMouseWheelMove();
+                if(scrollWheel>0.f)chatScroll=std::min(1000,chatScroll+(int)std::ceil(scrollWheel)*2);
+                else if(scrollWheel<0.f)chatScroll=std::max(0,chatScroll+(int)std::floor(scrollWheel)*2);
+                if(IsKeyPressed(KEY_PAGE_UP))chatScroll=std::min(1000,chatScroll+6);
+                if(IsKeyPressed(KEY_PAGE_DOWN))chatScroll=std::max(0,chatScroll-6);
                 if(IsKeyPressed(KEY_BACKSPACE)&&!input.empty())input.pop_back();
                 if(IsKeyPressed(KEY_ENTER)){
                     if(!input.empty()&&ai.submitMessage(w,input)){w.log("Prisoner: "+input,w.player.pos,1);w.status="MESSAGE SENT VIA INTERCOM - WAITING FOR VOSS";input.clear();chat=false;DisableCursor();}
@@ -603,7 +691,7 @@ int main(){
             DrawSphere(impact,.075f,rgba(205,219,178,30));
         }
         EndMode3D();
-        overlay(w,ai,executor,font,chat,input,paused,controls,debug,IsKeyDown(KEY_TAB));
+        overlay(w,ai,executor,font,chat,input,paused,controls,debug,IsKeyDown(KEY_TAB),chatScroll);
         EndDrawing();
         if(IsKeyPressed(KEY_F12)&&!previewCapture)TakeScreenshot("AIPrisonBreak-preview.png");
         if(previewCapture && ++captureFrames>=30){

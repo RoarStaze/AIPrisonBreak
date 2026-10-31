@@ -155,7 +155,7 @@ ActionResult World::command(const std::string& action,const std::string& target,
     if(caught||escaped)return {false,"Game ended."};
     if(action=="speak") {
         if(target.empty()) return {false,"No speech."};
-        guardSpeech=target.substr(0,240); log("Voss: "+guardSpeech,guard.pos);return {true,guardSpeech};
+        guardSpeech=target.substr(0,1200); log("Voss: "+guardSpeech,guard.pos);return {true,guardSpeech};
     }
     if(action=="move"||action=="investigate"||action=="search") {
         if(at.x<1||at.z<1||at.x>width-2||at.z>height-2||solid((int)at.x,(int)at.z))return {false,"Destination blocked."};

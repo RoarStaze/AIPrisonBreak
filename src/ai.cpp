@@ -109,7 +109,7 @@ std::optional<Reply> AIService::poll(){
         const auto begin=message.find('{'),end=message.rfind('}');
         if(begin==std::string::npos||end==std::string::npos||end<begin)throw std::runtime_error("Model returned no JSON.");
         auto object=json::parse(message.substr(begin,end-begin+1));
-        if(object.contains("speech")&&object["speech"].is_string())reply.speech=object["speech"].get<std::string>().substr(0,380);
+        if(object.contains("speech")&&object["speech"].is_string())reply.speech=object["speech"].get<std::string>().substr(0,1200);
         if(reply.kind==ReplyKind::Conversation && reply.speech.empty())
             throw std::runtime_error("Model returned an empty conversational reply.");
         if(object.contains("actions")&&object["actions"].is_array())for(const auto& a:object["actions"]){
