@@ -3,6 +3,7 @@
 #include "world.hpp"
 #include "ai.hpp"
 #include "agent.hpp"
+#include "presentation_math.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -41,8 +42,101 @@ static Texture2D loadEnvironmentTexture(const char* filename,int seed,bool metal
     }
     return makeTexture(seed,metal);
 }
+static void texturedBox(Texture2D texture,Vector3 pos,float sx,float sy,float sz,Color tint);
+// A physically-aware lighting pass for all textured surfaces and native props.
+// This is a compact forward renderer, not a PBR pipeline.
+static Shader gPrisonLight{};
+static Texture2D gWhite{};
+static bool gUseLighting=false;
+static const char *gLightVertex=R"SHADER(
+#version 330
+in vec3 vertexPosition;
+in vec2 vertexTexCoord;
+in vec3 vertexNormal;
+in vec4 vertexColor;
+uniform mat4 mvp;
+uniform mat4 matModel;
+out vec3 positionWS;
+out vec3 normalWS;
+out vec2 uv;
+out vec4 colorVS;
+void main(){
+  positionWS=vec3(matModel*vec4(vertexPosition,1.0));
+  normalWS=normalize(mat3(matModel)*vertexNormal);
+  uv=vertexTexCoord;
+  colorVS=vertexColor;
+  gl_Position=mvp*vec4(vertexPosition,1.0);
+}
+)SHADER";
+static const char *gLightFragment=R"SHADER(
+#version 330
+in vec3 positionWS;
+in vec3 normalWS;
+in vec2 uv;
+in vec4 colorVS;
+out vec4 finalColor;
+uniform sampler2D texture0;
+uniform vec4 colDiffuse;
+uniform vec3 lampPos[6];
+uniform vec3 cameraPos;
+uniform vec3 flashForward;
+uniform int powerOn;
+uniform int flashOn;
+void main(){
+  vec4 albedo=texture(texture0,uv)*colDiffuse*colorVS;
+  vec3 n=normalize(normalWS);
+  vec3 light=vec3(powerOn==1 ? 0.67 : 0.24);
+  for(int i=0;i<6;i++){
+    vec3 v=lampPos[i]-positionWS;
+    float distanceToLamp=length(v);
+    float ndl=max(dot(n,normalize(v)),0.0);
+    float falloff=1.0/(1.0+0.075*distanceToLamp+0.046*distanceToLamp*distanceToLamp);
+    vec3 lampColor=(i%3==0)?vec3(1.0,0.91,0.78):vec3(0.79,0.9,1.0);
+    light+=(powerOn==1?1.6:0.12)*ndl*falloff*lampColor;
+  }
+  if(flashOn==1){
+    vec3 fromEye=positionWS-cameraPos;
+    float len=length(fromEye);
+    vec3 ray=normalize(fromEye+vec3(.00001));
+    float focus=pow(max(dot(ray,normalize(flashForward)),0.0),21.0);
+    light+=vec3(1.4,1.35,1.15)*focus/(1.0+0.12*len*len)*max(dot(n,normalize(-fromEye)),0.22);
+  }
+  vec3 lit=clamp(albedo.rgb*light,0.0,1.0);
+  float haze=clamp((length(cameraPos-positionWS)-10.0)/45.0,0.0,0.32);
+  vec3 rgb=mix(lit,vec3(0.065,0.09,0.105),haze);
+  finalColor=vec4(pow(rgb,vec3(.95)),albedo.a);
+}
+)SHADER";
+static void initLighting(){
+    Image image=GenImageColor(2,2,WHITE);
+    gWhite=LoadTextureFromImage(image);
+    UnloadImage(image);
+    gPrisonLight=LoadShaderFromMemory(gLightVertex,gLightFragment);
+    gUseLighting=gPrisonLight.id!=0 && GetShaderLocation(gPrisonLight,"lampPos[0]")>=0;
+}
+static void setLighting(const World& world,Vector3 eye,Vector3 direction,bool flashlight){
+    if(!gUseLighting)return;
+    const float lamps[18]={
+        5.0f,3.0f,4.0f, 5.0f,3.0f,13.0f,
+        14.0f,3.0f,4.0f, 14.0f,3.0f,13.0f,
+        22.0f,3.0f,5.0f, 22.0f,3.0f,15.0f
+    };
+    float pos[3]={eye.x,eye.y,eye.z}, forward[3]={direction.x,direction.y,direction.z};
+    int power=world.lights?1:0, on=flashlight?1:0;
+    SetShaderValueV(gPrisonLight,GetShaderLocation(gPrisonLight,"lampPos[0]"),lamps,SHADER_UNIFORM_VEC3,6);
+    SetShaderValue(gPrisonLight,GetShaderLocation(gPrisonLight,"cameraPos"),pos,SHADER_UNIFORM_VEC3);
+    SetShaderValue(gPrisonLight,GetShaderLocation(gPrisonLight,"flashForward"),forward,SHADER_UNIFORM_VEC3);
+    SetShaderValue(gPrisonLight,GetShaderLocation(gPrisonLight,"powerOn"),&power,SHADER_UNIFORM_INT);
+    SetShaderValue(gPrisonLight,GetShaderLocation(gPrisonLight,"flashOn"),&on,SHADER_UNIFORM_INT);
+}
+static void releaseLighting(){
+    if(gPrisonLight.id && gPrisonLight.id!=GetShaderDefault().id)UnloadShader(gPrisonLight);
+    if(gWhite.id)UnloadTexture(gWhite);
+}
+
 static void box(float x,float y,float z,float sx,float sy,float sz,Color color){
-    DrawCube(v3(x,y,z),sx,sy,sz,color);
+    if(gWhite.id)texturedBox(gWhite,v3(x,y,z),sx,sy,sz,color);
+    else DrawCube(v3(x,y,z),sx,sy,sz,color);
 }
 static void beam(Vector3 a,Vector3 b,float radius,Color color,int sides=10){
     DrawCylinderEx(a,b,radius,radius,sides,color);
@@ -57,34 +151,47 @@ static Model gSurfaceCube{};
 static void texturedBox(Texture2D texture,Vector3 pos,float sx,float sy,float sz,Color tint){
     if(gSurfaceCube.meshCount==0)gSurfaceCube=LoadModelFromMesh(GenMeshCube(1,1,1));
     gSurfaceCube.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture=texture;
+    if(gUseLighting)gSurfaceCube.materials[0].shader=gPrisonLight;
     DrawModelEx(gSurfaceCube,pos,v3(0,1,0),0,v3(sx,sy,sz),tint);
 }
 static void drawDoor(const Door& d,Texture2D steel){
-    float z=d.z+.5f,x=d.x+.5f;
-    if(d.open){
-        box(x-.43f,1.38f,z,.09f,2.74f,.17f,rgba(32,46,52));
-        box(x+.43f,1.38f,z,.09f,2.74f,.17f,rgba(32,46,52));
-        box(x,2.72f,z,.93f,.11f,.17f,rgba(27,34,41));
-    }else {
-        texturedBox(steel,v3(x,1.36f,z),.94f,2.68f,.14f,rgba(174,181,185));
-        texturedBox(steel,v3(x,1.4f,z+.083f),.79f,2.47f,.012f,rgba(155,162,166));
-        box(x,1.4f,z-.083f,.79f,2.47f,.012f,rgba(47,64,72));
-        box(x,1.88f,z+.093f,.52f,.64f,.02f,rgba(18,28,31));
-        box(x,1.88f,z+.11f,.47f,.57f,.012f,rgba(92,108,105,170));
-        box(x+.32f,1.11f,z+.11f,.038f,.24f,.035f,rgba(175,184,174));
+    DoorVisual leaf=doorVisual(d.x,d.z,d.open);
+    const float x=d.x+.5f,z=d.z+.5f;
+    // Heavy security doors fit the physical wall: the partition runs along Z.
+    // Continuous reveals connect both faces of the meter-thick concrete wall.
+    for(float jambZ:{z-.46f,z+.46f}) {
+        box(x,1.36f,jambZ,1.02f,2.72f,.10f,rgba(43,54,62));
+        box(x,1.36f,jambZ,1.06f,2.65f,.036f,rgba(90,96,98));
     }
-    box(x-.5f,1.37f,z,.06f,2.74f,.24f,rgba(17,22,27));
-    box(x+.5f,1.37f,z,.06f,2.74f,.24f,rgba(17,22,27));
-    Color access=d.locked?rgba(201,64,49):rgba(85,194,142);
-    box(x+.58f,1.45f,z+.15f,.13f,.3f,.06f,rgba(12,23,28));
-    box(x+.59f,1.45f,z+.195f,.055f,.065f,.018f,access);
+    box(x,2.72f,z,1.04f,.15f,1.01f,rgba(43,54,62));
+    box(x,.028f,z,1.04f,.052f,1.01f,rgba(68,72,71));
+    // Rounded metallic surface treatments and viewport.
+    texturedBox(steel,v3(leaf.centerX,1.32f,leaf.centerZ),leaf.depthX,2.55f,leaf.depthZ,rgba(203,212,214));
+    if(!d.open){
+        box(x-.065f,1.82f,z,.024f,.56f,.42f,rgba(17,25,29));
+        box(x-.086f,1.82f,z,.018f,.43f,.33f,rgba(84,116,131));
+        box(x+.065f,1.82f,z,.024f,.56f,.42f,rgba(17,25,29));
+        box(x+.086f,1.82f,z,.018f,.43f,.33f,rgba(84,116,131));
+        box(x-.09f,1.04f,z+.27f,.035f,.20f,.034f,rgba(180,190,191));
+        box(x+.09f,1.04f,z+.27f,.035f,.20f,.034f,rgba(180,190,191));
+        box(x-.094f,.46f,z,.01f,.06f,.60f,rgba(78,90,93));
+    }else{
+        box(leaf.centerX,1.36f,leaf.centerZ,.72f,.05f,.12f,rgba(61,75,77));
+        beam(v3(x,0,z-.45f),v3(x,2.72f,z-.45f),.045f,rgba(156,164,164));
+    }
+    Color access=d.locked?rgba(243,81,65):rgba(90,220,170);
+    // Both sides have functional visual access indicators.
+    for(float side:{-1.f,1.f}){
+        box(x+side*.55f,1.37f,z+.35f,.12f,.32f,.16f,rgba(20,31,36));
+        box(x+side*.62f,1.45f,z+.35f,.025f,.057f,.065f,access);
+    }
 }
 static void drawGuard(Point p,float angle,float time,bool alert){
     // Articulated rounded anthropomorphic placeholder; character can later be replaced by a rigged asset.
     Vector3 base=v3(p.x,0,p.z);
     float sway=std::sin(time*6.f)*.085f;
     DrawCylinder(v3(p.x,.009f,p.z),.42f,.42f,.012f,20,rgba(0,0,0,92));
-    Color pants=rgba(24,31,40),shirt=rgba(34,46,54),skin=rgba(183,143,118);
+    Color pants=rgba(36,46,53),shirt=rgba(64,83,94),skin=rgba(185,147,121);
     beam(v3(p.x-.16f,.77f,p.z),v3(p.x-.17f+sway*.5f,.12f,p.z+.08f),.115f,pants);
     beam(v3(p.x+.16f,.77f,p.z),v3(p.x+.17f-sway*.5f,.12f,p.z-.08f),.115f,pants);
     box(p.x-.17f,.13f,p.z-.06f,.22f,.16f,.39f,rgba(18,20,25));
@@ -107,7 +214,7 @@ static void drawGuard(Point p,float angle,float time,bool alert){
 static void worldGeometry(const World& w,Texture2D concrete,Texture2D floor,Texture2D steel,float time) {
     // Deliberate material variation, surface detailing and repeated environmental storytelling.
     for(int z=1;z<World::height-1;z++)for(int x=1;x<World::width-1;x++){
-        Color tint=((x+z)%4==0)?rgba(177,187,184):rgba(151,161,161);
+        Color tint=((x+z)%4==0)?rgba(223,226,225):rgba(212,217,216);
         texturedBox(floor,v3(x+.5f,-.09f,z+.5f),1,.16f,1,tint);
         if((x+z*3)%5==0)box(x+.5f,-.002f,z+.5f,.02f,.003f,.72f,rgba(45,53,57,130));
     }
@@ -117,12 +224,22 @@ static void worldGeometry(const World& w,Texture2D concrete,Texture2D floor,Text
         if(d)continue;
         bool exposed=!w.solid(x+1,z)||!w.solid(x-1,z)||!w.solid(x,z+1)||!w.solid(x,z-1);
         if(!exposed)continue;
-        texturedBox(concrete,v3(x+.5f,1.57f,z+.5f),1,3.16f,1,rgba(134,145,146));
+        texturedBox(concrete,v3(x+.5f,1.57f,z+.5f),1,3.16f,1,rgba(224,225,221));
         box(x+.5f,.18f,z+.5f,1,.36f,1,rgba(38,47,52));
         box(x+.5f,3.04f,z+.5f,1,.24f,1,rgba(51,63,68));
         if((z+x*2)%3==0)box(x+.5f,1.6f,z+.5f,.012f,2.2f,.025f,rgba(39,46,51,95));
     }
     for(const auto& d:w.doors)drawDoor(d,steel);
+    // Actual ceiling: previous builds rendered an empty black sky above the prison.
+    for(int z=1;z<World::height-1;z++)for(int x=1;x<World::width-1;x++){
+        if(w.solid(x,z))continue;
+        texturedBox(concrete,v3(x+.5f,3.26f,z+.5f),1,.15f,1,rgba(212,219,217));
+    }
+    // Overhead maintenance conduits and a structural service tray.
+    for(float zz:{4.5f,9.5f,14.5f}){
+        box(14.5f,3.02f,zz,6.0f,.1f,.12f,rgba(52,69,79));
+        box(5.5f,3.04f,zz,7.0f,.09f,.10f,rgba(75,85,89));
+    }
     // Ceiling beams and lights: not merely a single uniform flat plane.
     for(int x=2;x<World::width-1;x+=4){
         box(x+.5f,3.21f,9.5f,.13f,.26f,16.3f,rgba(43,54,61));
@@ -262,13 +379,14 @@ int main(){
     SetTargetFPS(60);
     DisableCursor();
     Font font=interfaceFont();
+    initLighting();
     Texture2D concrete=loadEnvironmentTexture("assets/textures/concrete_wall_001.jpg",53,false);
     Texture2D floor=loadEnvironmentTexture("assets/textures/concrete_floor_worn_001.jpg",46,false);
     Texture2D steel=loadEnvironmentTexture("assets/textures/rusty_metal_02.jpg",23,true);
     World w;
     AIService ai;
     AgentExecutor executor;
-    float yaw=1.45f,pitch=0.f,worldTick=0.f,brainTick=0.f;
+    float yaw=1.77f,pitch=0.f,worldTick=0.f,brainTick=0.f;
     bool paused=false,chat=false,flashlight=true;
     std::string input;
     while(!WindowShouldClose()){
@@ -280,7 +398,7 @@ int main(){
             else {paused=!paused;if(paused)EnableCursor();else DisableCursor();}
         }
         if(IsKeyPressed(KEY_R)&&(paused||w.caught||w.escaped)){
-            w=World{};executor.clear();yaw=1.45f;pitch=0;worldTick=0;brainTick=0;
+            w=World{};executor.clear();yaw=1.77f;pitch=0;worldTick=0;brainTick=0;
             paused=false;chat=false;input.clear();DisableCursor();
         }
         if(!paused&&!w.caught&&!w.escaped){
@@ -293,7 +411,7 @@ int main(){
                     else w.status="AI BUSY OR NO MESSAGE";
                 }
             }else{
-                Vector2 mouse=GetMouseDelta();yaw-=mouse.x*.00225f;pitch=std::clamp(pitch-mouse.y*.00225f,-1.34f,1.34f);
+                Vector2 mouse=GetMouseDelta();yaw=applyMouseYaw(yaw,mouse.x);pitch=std::clamp(pitch-mouse.y*.00225f,-1.34f,1.34f);
                 if(IsKeyPressed(KEY_F))flashlight=!flashlight;
                 if(IsKeyPressed(KEY_E)){
                     ActionResult response=w.playerInteract();w.status=response.text;
@@ -327,6 +445,7 @@ int main(){
         BeginDrawing();
         ClearBackground(rgba(11,17,23));
         BeginMode3D(camera);
+        setLighting(w,camera.position,dir,flashlight);
         worldGeometry(w,concrete,floor,steel,w.elapsed);
         drawGuard(w.guard.pos,w.guard.angle,w.elapsed,w.alert>1);
         if(flashlight){
@@ -339,6 +458,8 @@ int main(){
         EndDrawing();
     }
     UnloadTexture(concrete);UnloadTexture(floor);UnloadTexture(steel);
+    if(gSurfaceCube.meshCount)UnloadModel(gSurfaceCube);
+    releaseLighting();
     if(font.texture.id && font.texture.id!=GetFontDefault().texture.id)UnloadFont(font);
     CloseWindow();return 0;
 }
