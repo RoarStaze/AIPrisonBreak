@@ -42,3 +42,7 @@ if(WIN32)
     target_link_libraries(ai_test PRIVATE winhttp)
 endif()
 add_test(NAME ai_test COMMAND ai_test)
+
+add_executable(chat_text_test tests/chat_text_test.cpp)
+target_include_directories(chat_text_test PRIVATE src)
+add_test(NAME chat_text_test COMMAND chat_text_test)
