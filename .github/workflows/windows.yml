@@ -11,6 +11,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - name: Verify in-place update pipeline
+        shell: pwsh
+        run: ./tests/update_pipeline_test.ps1
       - name: Configure
         run: cmake -S . -B build -A x64 -DCMAKE_BUILD_TYPE=Release
       - name: Build
