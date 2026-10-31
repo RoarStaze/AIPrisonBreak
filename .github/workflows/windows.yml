@@ -17,9 +17,31 @@ jobs:
         run: cmake --build build --config Release --parallel 4
       - name: Run simulation tests
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Include CC0 photo textures in game bundle
+        shell: pwsh
+        run: |
+          $dir = "build/Release/assets/textures"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $assets = @(
+            @{ name = "concrete_wall_001.jpg"; source = "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/concrete_wall_001/concrete_wall_001_diff_1k.jpg" },
+            @{ name = "concrete_floor_worn_001.jpg"; source = "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/concrete_floor_worn_001/concrete_floor_worn_001_diff_1k.jpg" },
+            @{ name = "rusty_metal_02.jpg"; source = "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rusty_metal_02/rusty_metal_02_diff_1k.jpg" }
+          )
+          foreach ($asset in $assets) {
+            try {
+              $dest = Join-Path $dir $asset.name
+              Invoke-WebRequest -Uri $asset.source -OutFile $dest -TimeoutSec 40 -ErrorAction Stop
+              if ((Get-Item $dest).Length -lt 5000) { throw "File too small" }
+              Write-Host "Bundled $($asset.name)"
+            } catch {
+              Write-Warning "Could not fetch $($asset.name): $($_.Exception.Message). Procedural fallback will be used."
+            }
+          }
       - name: Upload native fullscreen Windows game
         uses: actions/upload-artifact@v4
         with:
           name: AIPrisonBreak-Windows-x64
-          path: build/Release/AIPrisonBreak.exe
+          path: |
+            build/Release/AIPrisonBreak.exe
+            build/Release/assets/
           if-no-files-found: error

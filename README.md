@@ -17,11 +17,11 @@ This application starts fullscreen at the native display resolution. **F11** tog
 
 Install [Ollama](https://ollama.com/download/windows), then in PowerShell:
 
-\`\`\`powershell
+```powershell
 ollama pull qwen3:4b-instruct
-\`\`\`
+```
 
-Ollama runs on your machine at \`127.0.0.1:11434\`. The game continues functioning with deterministic guard movement if Ollama is unavailable; advanced language-model decisions and conversation require the installed model. The repository never asks you to put API keys in source code.
+Ollama runs on your machine at `127.0.0.1:11434`. The game continues functioning with deterministic guard movement if Ollama is unavailable; advanced language-model decisions and conversation require the installed model. The repository never asks you to put API keys in source code.
 
 ## Controls
 
@@ -49,21 +49,25 @@ Ollama runs on your machine at \`127.0.0.1:11434\`. The game continues functioni
 
 **Timing:** The simulation runs continuously while Ollama plans asynchronously. Deterministic pursuit and patrol maintain responsive movement during model inference.
 
-**Trust boundary:** Every LLM command is validated by \`World::command\`. Invalid commands are rejected and recorded as events.
+**Trust boundary:** Every LLM command is validated by `World::command`. Invalid commands are rejected and recorded as events.
 
 ## Developer build
 
 On Windows, install Git, CMake and Visual Studio Build Tools (MSVC C++), then:
 
-\`\`\`powershell
+```powershell
 cmake -S . -B build -A x64
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 .\build\Release\AIPrisonBreak.exe
-\`\`\`
+```
 
 CMake fetches raylib 5.5 and nlohmann/json automatically.
 
 ## Scope and realism
 
 This is an **early native prototype**. Its modeled props, character, and procedural textures are placeholders; the scene is not yet photorealistic or a commercial-quality production game. Realistic appearance will require licensed high-quality models, material assets, environment art, lighting/shadow pipelines, and animation. Native fullscreen delivery and a real AI gameplay foundation come first.
+
+## Photo materials
+
+Windows build artifacts include CC0 photographic wall, floor and metal textures when the Poly Haven CDN is reachable during CI. The game has procedural offline fallbacks. See [texture credits](docs/ASSET_LICENSES.md).

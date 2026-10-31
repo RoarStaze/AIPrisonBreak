@@ -32,6 +32,15 @@ static Texture2D makeTexture(int seed,bool metal){
     Texture2D t=LoadTextureFromImage(img);UnloadImage(img);
     SetTextureFilter(t,TEXTURE_FILTER_BILINEAR);return t;
 }
+static Texture2D loadEnvironmentTexture(const char* filename,int seed,bool metal) {
+    // The release bundle includes optional CC0 photographic materials.
+    // A procedural fallback keeps development/offline builds runnable.
+    if(FileExists(filename)){
+        Texture2D texture=LoadTexture(filename);
+        if(texture.id) {SetTextureFilter(texture,TEXTURE_FILTER_TRILINEAR);return texture;}
+    }
+    return makeTexture(seed,metal);
+}
 static void box(float x,float y,float z,float sx,float sy,float sz,Color color){
     DrawCube(v3(x,y,z),sx,sy,sz,color);
 }
@@ -50,15 +59,15 @@ static void texturedBox(Texture2D texture,Vector3 pos,float sx,float sy,float sz
     gSurfaceCube.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture=texture;
     DrawModelEx(gSurfaceCube,pos,v3(0,1,0),0,v3(sx,sy,sz),tint);
 }
-static void drawDoor(const Door& d){
+static void drawDoor(const Door& d,Texture2D steel){
     float z=d.z+.5f,x=d.x+.5f;
     if(d.open){
         box(x-.43f,1.38f,z,.09f,2.74f,.17f,rgba(32,46,52));
         box(x+.43f,1.38f,z,.09f,2.74f,.17f,rgba(32,46,52));
         box(x,2.72f,z,.93f,.11f,.17f,rgba(27,34,41));
     }else {
-        box(x,1.36f,z,.94f,2.68f,.14f,rgba(33,49,58));
-        box(x,1.4f,z+.083f,.79f,2.47f,.012f,rgba(57,74,83));
+        texturedBox(steel,v3(x,1.36f,z),.94f,2.68f,.14f,rgba(174,181,185));
+        texturedBox(steel,v3(x,1.4f,z+.083f),.79f,2.47f,.012f,rgba(155,162,166));
         box(x,1.4f,z-.083f,.79f,2.47f,.012f,rgba(47,64,72));
         box(x,1.88f,z+.093f,.52f,.64f,.02f,rgba(18,28,31));
         box(x,1.88f,z+.11f,.47f,.57f,.012f,rgba(92,108,105,170));
@@ -95,11 +104,11 @@ static void drawGuard(Point p,float angle,float time,bool alert){
     // Direction indicator shows the agent's physical orientation.
     DrawLine3D(v3(p.x,1.8f,p.z),v3(p.x+std::sin(angle)*.43f,1.8f,p.z-std::cos(angle)*.43f),rgba(223,193,119,130));
 }
-static void worldGeometry(const World& w,Texture2D concrete,Texture2D steel,float time) {
+static void worldGeometry(const World& w,Texture2D concrete,Texture2D floor,Texture2D steel,float time) {
     // Deliberate material variation, surface detailing and repeated environmental storytelling.
     for(int z=1;z<World::height-1;z++)for(int x=1;x<World::width-1;x++){
         Color tint=((x+z)%4==0)?rgba(177,187,184):rgba(151,161,161);
-        texturedBox(concrete,v3(x+.5f,-.09f,z+.5f),1,.16f,1,tint);
+        texturedBox(floor,v3(x+.5f,-.09f,z+.5f),1,.16f,1,tint);
         if((x+z*3)%5==0)box(x+.5f,-.002f,z+.5f,.02f,.003f,.72f,rgba(45,53,57,130));
     }
     for(int z=0;z<World::height;z++)for(int x=0;x<World::width;x++) {
@@ -113,7 +122,7 @@ static void worldGeometry(const World& w,Texture2D concrete,Texture2D steel,floa
         box(x+.5f,3.04f,z+.5f,1,.24f,1,rgba(51,63,68));
         if((z+x*2)%3==0)box(x+.5f,1.6f,z+.5f,.012f,2.2f,.025f,rgba(39,46,51,95));
     }
-    for(const auto& d:w.doors)drawDoor(d);
+    for(const auto& d:w.doors)drawDoor(d,steel);
     // Ceiling beams and lights: not merely a single uniform flat plane.
     for(int x=2;x<World::width-1;x+=4){
         box(x+.5f,3.21f,9.5f,.13f,.26f,16.3f,rgba(43,54,61));
@@ -253,8 +262,9 @@ int main(){
     SetTargetFPS(60);
     DisableCursor();
     Font font=interfaceFont();
-    Texture2D concrete=makeTexture(53,false);
-    Texture2D steel=makeTexture(23,true);
+    Texture2D concrete=loadEnvironmentTexture("assets/textures/concrete_wall_001.jpg",53,false);
+    Texture2D floor=loadEnvironmentTexture("assets/textures/concrete_floor_worn_001.jpg",46,false);
+    Texture2D steel=loadEnvironmentTexture("assets/textures/rusty_metal_02.jpg",23,true);
     World w;
     AIService ai;
     AgentExecutor executor;
@@ -317,7 +327,7 @@ int main(){
         BeginDrawing();
         ClearBackground(rgba(11,17,23));
         BeginMode3D(camera);
-        worldGeometry(w,concrete,steel,w.elapsed);
+        worldGeometry(w,concrete,floor,steel,w.elapsed);
         drawGuard(w.guard.pos,w.guard.angle,w.elapsed,w.alert>1);
         if(flashlight){
             // Player-controlled flashlight glow / near-cone cue. Dynamic lighting material pass is future work.
@@ -328,7 +338,7 @@ int main(){
         overlay(w,ai,executor,font,chat,input,paused);
         EndDrawing();
     }
-    UnloadTexture(concrete);UnloadTexture(steel);
+    UnloadTexture(concrete);UnloadTexture(floor);UnloadTexture(steel);
     if(font.texture.id && font.texture.id!=GetFontDefault().texture.id)UnloadFont(font);
     CloseWindow();return 0;
 }
